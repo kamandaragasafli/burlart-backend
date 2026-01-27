@@ -1,0 +1,315 @@
+"f950a854-988d-40e7-b9f1-d712bcef4eef:e4f9950ecee5cdce88f7ade6c7dbe832"
+
+
+Pika Labs → 35 kredit "fal-ai/pika/v2.2/text-to-video"
+Seedance → 45 kredit "fal-ai/bytedance/seedance/v1/pro/fast/text-to-video"
+Wan → 55 kredit "wan/v2.6/text-to-video"
+Luma AI → 70 kredit  "fal-ai/kling-video/v2.5-turbo/pro/text-to-video"
+Kling AI → 120 kredit- "fal-ai/kling-video/v2.5-turbo/pro/text-to-video"
+Veo → 135 kredit - "fal-ai/veo3"
+Sora → 285 kredit - "fal-ai/sora-2/text-to-video"
+
+
+
+•GPT Image → 10 kredit "fal-ai/gpt-image-1.5"
+•Nano Banana → 12 kredit "fal-ai/nano-banana-pro"
+•Seedream → 15 kredit "fal-ai/bytedance/seedream/v4.5/text-to-image"
+•Flux → 20 kredit "fal-ai/flux-2-pro"
+•Z-Image → 18 kredit "fal-ai/z-image/turbo/lora"
+•Qwen → 16 kredit "fal-ai/qwen-image-2512"
+
+
+
+
+Əsas qayda:
+Paket satılır → içində kredit var
+İstifadəçi krediti istədiyi kimi xərcləyir
+Kredit bitəndə Top-up (əlavə kredit) alır
+Paket ay bitəndə auto-renew (avtomatik yenilənmə) olur
+
+1) Sabit qiymətlər (DƏYİŞMƏZ) — Video modelləri üçün satış kreditləri
+Bu qiymətlər “locked” olmalıdır. Admin paneldən də dəyişilməməlidir (yalnız owner təlimat verəndə dəyişir).
+5 saniyəlik video üçün satış kreditləri:
+Pika Labs → 35 kredit
+Seedance → 45 kredit
+Wan → 55 kredit
+Luma AI → 70 kredit
+Kling AI → 120 kredit
+Veo → 135 kredit
+Sora → 285 kredit
+Qeyd: Frontend-də model seçəndə kredit xərci göstərilməlidir.
+
+2) Paketlər (Subscription)
+Bütün paketlər bütün AI alətlərinə giriş verir. Fərq yalnız kredit sayıdır.
+Paketlər
+1.Starter — ₼19 / ay → 750 kredit
+2.Pro — ₼39 / ay → 1,800 kredit
+3.Agency — ₼79 / ay → 4,000 kredit
+Auto-renew: Paket ay bitəndə avtomatik yenilənir və kredit balansına yeni aylıq kredit əlavə olunur (köhnə qalıq kreditlərlə davranış aşağıda).
+
+Kredit rollover qaydası (açıq qərar)
+Aylıq kreditlər rollover etmir, hər ay reset
+
+Sistemin funksionallığını qurduq modellər işləyir indi əsas bölümə keçək
+addım addım yazacam
+
+
+
+3) Top-up kredit paketləri (one-time purchase)
+Top-up UI-də 3 seçim:
+Top-up S: ₼10 → 450 kredit
+Top-up M (ən çox seçilən): ₼25 → 1,150 kredit
+Top-up L: ₼50 → 2,200 kredit
+Top-up kreditlər:
+dərhal balansda görünməlidir
+müddətsizdir (bitənə qədər qalır)
+subscription-u dəyişmir
+
+4) Ödəniş sistemi: E-point + komissiya + vergi
+Ödəniş provayderi: E-point
+Xərclər:
+hər ödənişdən 3% komissiya
+E-point-in köçürdüyü məbləğdən 4% vergi tutulur
+Qeyd: Bu xərclər backend-də “financial reporting” üçün saxlanmalıdır. Admin paneldə görməlidir.
+
+
+
+
+5) Kredit istifadə məntiqi (ən kritik hissə)
+5.1. Kredit “hold” sistemi (mütləq)
+Video job başladıqda:
+istifadəçinin balansından kredit dərhal silinməsin
+əvvəl HOLD edilsin
+job uğurlu bitəndə → hold CONFIRM (silinsin)
+job fail / cancel olarsa → hold RELEASE (geri qaytarılsın)
+Bu, “retry/fail” riskini idarə edir və user etimadını qoruyur.
+5.2. Kredit yetərsizdirsə
+model seçimi ediləndə “Required credits” göstər
+Start klikində backend yoxlayır:
+okredit çatmırsa → “Top-up al” ekranı açılır
+5.3. Video modelləri və kredit xərci
+Hər model üçün “cost_in_credits” sabitdir (yuxarıda locked).
+1 video request = 5 saniyəlik job kimi qəbul edilir.
+
+
+
+
+6) Frontend texniki tapşırıq (UI/UX)
+6.1. Səhifələr
+1.Landing
+oPricing bölməsi (3 paket)
+oTop-up bölməsi (3 seçim)
+o“Kredit sistemi necə işləyir?” izahı (qısa)
+2.Auth (register/login)
+3.Dashboard
+oKredit balansı (remaining + held)
+oModel seçimi (Pika, Seedance, Wan, Luma, Kling, Veo, Sora)
+oModelin kredit xərci badge kimi
+oPrompt input + (future: image upload)
+o“Generate” düyməsi
+4.My Jobs
+ojob list (status: queued/running/success/failed)
+ooutput preview + download link
+ofail səbəbi (qısa)
+5.Billing
+opaket planı (current)
+onext billing date
+oupgrade/downgrade (optional v1; ən az “change plan”)
+otop-up purchase
+oinvoice list (basic)
+6.Checkout
+oE-point redirect/embedded flow
+osuccess/cancel pages
+
+
+
+6.2. Pricing UI Copy 
+PAKETLƏR 
+🟢 Starter
+₼19 / ay
+750 kredit
+Uyğundur: yeni başlayanlar, kiçik bizneslər
+Təxmini istifadə imkanları 👇
+🎥 AI Video:
+o~21 standart video (Pika)
+ovə ya ~6 premium video (Kling)
+🖼 AI Şəkil: ~75 şəkil
+🎙 AI Səs: ~90 dəqiqə səsləndirmə
+Daxildir
+Bütün AI video modelləri
+Bütün AI şəkil alətləri
+Bütün AI səsləndirmə alətləri
+Kredit bitərsə → əlavə kredit ala bilərsən
+Avtomatik aylıq yenilənmə
+👉 Başlamaq üçün ideal
+
+🔵 Pro ⭐ (Ən çox seçilən)
+₼39 / ay
+1 800 kredit
+Uyğundur: SMM-lər, kontent yaradıcıları
+Təxmini istifadə imkanları 👇
+🎥 AI Video:
+o~51 standart video
+ovə ya ~15 premium video
+🖼 AI Şəkil: ~180 şəkil
+🎙 AI Səs: ~220 dəqiqə
+Daxildir
+Bütün AI modellər açıq
+Daha çox balanslı istifadə imkanı
+Kredit bitərsə → top-up ilə davam
+Avtomatik aylıq yenilənmə
+👉 Davamlı istifadə üçün ən yaxşı seçim
+
+🟣 Agency
+₼79 / ay
+4 000 kredit
+Uyğundur: agentliklər, komandalar, heavy user-lər
+Təxmini istifadə imkanları 👇
+🎥 AI Video:
+o~114 standart video
+ovə ya ~33 premium video
+🖼 AI Şəkil: ~400 şəkil
+🎙 AI Səs: ~500 dəqiqə
+Daxildir
+Bütün AI modellər limitsiz seçimlə
+Yüksək həcmli işlər üçün uyğundur
+Kredit bitərsə → əlavə kreditlə fasiləsiz iş
+Avtomatik aylıq yenilənmə
+👉 Komanda və agentliklər üçün maksimum güc
+
+🔍 VACİB QEYD 
+Bütün paketlər eyni AI alətlərinə giriş verir
+Fərq:
+hansı modeli nə qədər istifadə etməyindədir
+Daha realistik AI modelləri daha çox kredit,
+standart modellər isə daha az kredit istifadə edir.
+👉 Hansını seçəcəyinə sən qərar verirsən.
+
+
+
+➕ TOP-UP KREDİT
+🔋 Kreditin bitdi?
+Dayanmağa ehtiyac yoxdur.
+İstədiyin qədər əlavə kredit al və davam et.
+
+🟢 Top-up S
+₼10
+450 kredit
+Uyğundur: işi yarımçıq qalanlar üçün
+1–2 əlavə video
+və ya bir neçə şəkil / səs əməliyyatı
+Dərhal aktiv olur
+👉 Tez davam et
+
+🔵 Top-up M ⭐ Ən çox seçilən
+₼25
+1 150 kredit
+Uyğundur: ayı problemsiz bitirmək üçün
+Bir neçə AI video
+Şəkil + səs balanslı istifadə
+Paket dəyişməyə ehtiyac yoxdur
+👉 Ən sərfəli seçim
+
+🟣 Top-up L
+₼50
+2 200 kredit
+Uyğundur: agentliklər və intensiv istifadə
+Yüksək həcmli işlər
+Premium AI modellər üçün ideal
+İstənilən vaxt istifadə oluna bilər
+👉 Maksimum rahatlıq
+
+ℹ️ AÇIQLAYICI QEYD 
+Top-up kredit nədir?
+Top-up:
+mövcud paketinə əlavə kreditdir
+paketini dəyişmir
+müddətsizdir (bitənədək qalır)
+
+Paketlə top-up arasında fərq nədir?
+Paket: ən sərfəli kredit dəyəri
+Top-up: rahatlıq və fasiləsiz davam üçün
+
+📌 Daha çox istifadə edirsənsə, növbəti ay paket yüksəltmək daha sərfəli ola bilər.
+
+
+
+
+6.3. UX trigger-lər
+Kredit 20% qaldıqda: banner “kredit azalır, top-up et”
+Kredit bitəndə: modal “Top-up al və davam et”
+Top-up M “Most popular” badge
+6.4. UI komponentləri
+Pricing cards (3)
+Top-up cards (3)
+Model grid / dropdown
+Job status list + progress
+Toast notifications (payment success, job submitted, credits held/released)
+Acceptance criteria (Frontend)
+User model seçəndə kredit xərci görür
+“Generate” basanda kredit yetmirsə top-up ekranı çıxır
+Payment success-dan sonra balans dərhal artır
+Job fail olarsa kredit geri qayıdır (UI-də balans yenilənir)
+
+
+Acceptance criteria (Backend)
+Kredit heç vaxt “itmir” (hold->confirm/release audit)
+İki dəfə callback gəlsə “idempotent” işləsin (double spend olmasın)
+Insufficient credits -> 402/400 error + frontend top-up açır
+7.3. Subscription billing
+Subscription aktiv olduqda:
+operiod_end çatanda:
+payment attempt (E-point)
+success → new period_start/end, wallet-ə monthly credits əlavə et (cap qaydası ilə)
+fail → status=past_due (grace period optional)
+Billing date UI üçün endpoint
+7.4. Top-up purchase
+User top-up seçir (S/M/L)
+payment pending
+E-point success webhook:
+opayment status=success
+owallet available += topup_credits
+oledger: topup
+7.5. E-point integration
+Payment init endpoint (amount, purpose, return_url, callback_url)
+Webhook verify (signature / secret)
+Payment status sync endpoint
+7.6. Admin (minimal v1)
+Users list + current plan
+Payments list (gross, fees, tax, net)
+Jobs monitoring
+Model pricing READ-ONLY (locked)
+
+8) Risk & Reputasiya qorunması 
+8.1. Şəffaflıq
+UI-də hər modelin kredit xərci göstərilsin.
+“Premium daha çox kredit istifadə edir” mesajları olsun.
+8.2. Default model
+Default seçilmiş model: Pika (ən ucuz)
+User premium seçəndə tooltip/warning.
+8.3. Abuse protection (minimal)
+user üçün günlük max job sayı (soft limit)
+eyni promptu ardıcıl spam edəndə throttle
+rate limiting (IP + user)
+
+
+
+10) “Done” kriteriyaları (Project acceptance)
+1.User qeydiyyat olur, paket alır, balansına kredit gəlir
+2.User model seçir, kredit xərci görünür
+3.Generate basır → kredit hold edilir → job yaranır
+4.Success → output görünür, kredit confirm olur
+5.Fail → kredit release olur (geri qayıdır)
+6.Kredit bitəndə top-up alır → balans artır
+7.Aylıq auto-renew işləyir
+8.Payments-də E-point 3% və 4% vergi hesablanıb admin paneldə görünür
+
+
+
+
+
+
+
+
+Nano Banana Pro → Your request will cost $0.15 per image. For $1.00, you can run this model 7 times. 4K outputs will be charged at double the standard rate. If web search is used, an additional $0.015 will be charged. Note: Pricing may change in the future.
+Sora f an OpenAI API key is provided, it will be directly charged by OpenAI. Otherwise, you will be charged fal credits. The pricing is $0.1/s for Sora 2.
