@@ -313,3 +313,46 @@ oledger: topup
 
 Nano Banana Pro → Your request will cost $0.15 per image. For $1.00, you can run this model 7 times. 4K outputs will be charged at double the standard rate. If web search is used, an additional $0.015 will be charged. Note: Pricing may change in the future.
 Sora f an OpenAI API key is provided, it will be directly charged by OpenAI. Otherwise, you will be charged fal credits. The pricing is $0.1/s for Sora 2.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SATIŞ TOKEN QİYMƏTLƏRİ (model üzrə)
+
+Video modelləri (1 job üçün satış tokeni)
+- Sora 2: 79 token
+- Veo 3 (orta): 238 token
+- Kling v2.5 Turbo: 55 token
+- Luma Ray‑2 Flash: 32 token
+- Seedance v1 Pro: 39 token
+- Pika v2.2 (orta): 52 token
+- Wan v2.6: 24 token
+
+Image modelləri (1 şəkil üçün satış tokeni)
+- Nano Banana Pro (4K): 47 token
+- GPT Image 1.5 (orta): 16 token
+- Seedream v4.5: 6 token
+- Flux 2 Pro (orta): 6 token
+- Qwen Image 2512: 6 token
+- Z‑Image (Turbo): 2 token

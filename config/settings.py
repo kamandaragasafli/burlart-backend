@@ -28,6 +28,18 @@ GOOGLE_CLIENT_ID = config(
     default='831644999809-ftanfb31r6lnainviigku5o70dhvo130.apps.googleusercontent.com',
 )
 
+# E-point Payment Gateway Configuration
+EPOINT_TEST_MODE = config('EPOINT_TEST_MODE', default=True, cast=bool)
+EPOINT_API_URL = config('EPOINT_API_URL', default='https://epoint.az/api/1')
+EPOINT_PUBLIC_KEY = config('EPOINT_PUBLIC_KEY', default='')
+EPOINT_SECRET_KEY = config('EPOINT_SECRET_KEY', default='')
+
+# Frontend URL for redirects (user-facing pages)
+FRONTEND_URL = config('FRONTEND_URL', default='https://burlart.az')
+
+# Backend URL for webhooks/callbacks
+BACKEND_URL = config('BACKEND_URL', default='http://localhost:8000')
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -77,17 +89,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database (from .env, PostgreSQL, no defaults)
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT'),
+# Database configuration
+# Use SQLite for local development (DEBUG=True and no DB_NAME provided)
+# Use PostgreSQL for production (DB_NAME provided)
+USE_POSTGRES = config('DB_NAME', default=None) is not None
+
+if USE_POSTGRES:
+    # PostgreSQL for production
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('DB_NAME'),
+            'USER': config('DB_USER'),
+            'PASSWORD': config('DB_PASSWORD'),
+            'HOST': config('DB_HOST'),
+            'PORT': config('DB_PORT'),
+        }
     }
-}
+else:
+    # SQLite for local development
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -155,6 +181,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite default port
+    "http://127.0.0.1:5173",  # Vite default port
     "https://burlart.az",
     "https://www.burlart.az",
 ]

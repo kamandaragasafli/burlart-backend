@@ -10,23 +10,23 @@ DO NOT MODIFY THESE VALUES WITHOUT OWNER APPROVAL.
 
 # Video model pricing (LOCKED - 5 seconds video)
 VIDEO_MODEL_CREDITS = {
-    'pika': 35,
-    'seedance': 45,
-    'wan': 55,
-    'luma': 70,
-    'kling': 120,
-    'veo': 135,
-    'sora': 285,
+    'pika': 52,       # Pika v2.2 (orta) - 52 token
+    'seedance': 39,   # Seedance v1 Pro      - 39 token
+    'wan': 24,        # Wan v2.6             - 24 token
+    'luma': 32,       # Luma Ray-2 Flash     - 32 token
+    'kling': 55,      # Kling v2.5 Turbo     - 55 token
+    'veo': 238,       # Veo 3 (orta)         - 238 token
+    'sora': 79,       # Sora 2               - 79 token
 }
 
 # Image model pricing (LOCKED)
 IMAGE_MODEL_CREDITS = {
-    'gpt-image': 10,
-    'nano-banana': 12,
-    'seedream': 15,
-    'flux': 20,
-    'z-image': 18,
-    'qwen': 16,
+    'gpt-image': 16,      # GPT Image 1.5 (orta)  - 16 token
+    'nano-banana': 47,    # Nano Banana Pro (4K)  - 47 token
+    'seedream': 6,        # Seedream v4.5         - 6 token
+    'flux': 6,            # Flux 2 Pro (orta)     - 6 token
+    'z-image': 2,         # Z-Image (Turbo)       - 2 token
+    'qwen': 6,            # Qwen Image 2512       - 6 token
 }
 
 # ============================================================================
@@ -36,6 +36,18 @@ IMAGE_MODEL_CREDITS = {
 # All plans give access to ALL AI tools, difference is only credit amount
 # ============================================================================
 SUBSCRIPTION_PLANS = {
+    'demo': {
+        'name': 'Demo',
+        'price': 0.10,  # AZN (10 qəpik)
+        'currency': '₼',
+        'credits': 500,  # Demo credits
+        'period_days': 7,
+        'features': [
+            'Bütün AI alətlərinə demo giriş',
+            '500 kredit',
+            'Qısa müddətli test paketi',
+        ],
+    },
     'starter': {
         'name': 'Starter',
         'price': 19,  # AZN

@@ -6,7 +6,7 @@ import logging
 from django.utils import timezone
 from datetime import timedelta
 from .models import Subscription, User
-from .constants import SUBSCRIPTION_PLANS
+from .subscription_constants import SUBSCRIPTION_PLANS
 
 logger = logging.getLogger(__name__)
 
@@ -33,33 +33,43 @@ class SubscriptionService:
         
         plan_config = SUBSCRIPTION_PLANS[plan_type]
         
-        # Cancel any existing active subscriptions
-        existing = Subscription.objects.filter(
-            user=user,
-            status='active'
-        ).exclude(end_date__lt=timezone.now())
-        
-        for sub in existing:
-            sub.cancel()
+        # Delete any existing subscription for this user (OneToOneField constraint)
+        # We need to delete, not just cancel, because OneToOneField allows only one subscription per user
+        existing = Subscription.objects.filter(user=user)
+        if existing.exists():
+            # Cancel first (to update status)
+            for sub in existing:
+                try:
+                    sub.cancel()
+                except:
+                    pass
+            # Then delete to allow new subscription
+            existing.delete()
         
         # Create new subscription
-        end_date = timezone.now() + timedelta(days=plan_config['period_days'])
+        now = timezone.now()
+        period_end = now + timedelta(days=plan_config['period_days'])
         
         subscription = Subscription.objects.create(
             user=user,
-            plan_type=plan_type,
+            plan=plan_type,
             status='pending',
             auto_renew=auto_renew,
-            end_date=end_date,
+            period_start=now,
+            period_end=period_end,
+            next_renewal_date=period_end,
             payment_id=payment_id,
         )
         
-        # Activate and grant credits
-        subscription.activate()
+        # Activate and grant credits only if payment_id is provided (payment already completed)
+        if payment_id:
+            subscription.activate()
+        # Otherwise, subscription stays pending until payment is completed via webhook
         
         logger.info(
             f"Subscription created - User: {user.email}, Plan: {plan_type}, "
-            f"Credits: {plan_config['credits']}, Auto-renew: {auto_renew}"
+            f"Credits: {plan_config['credits']}, Auto-renew: {auto_renew}, "
+            f"Status: {'active' if payment_id else 'pending'}"
         )
         
         return subscription
@@ -79,8 +89,8 @@ class SubscriptionService:
         subscriptions_to_renew = Subscription.objects.filter(
             status='active',
             auto_renew=True,
-            end_date__lte=renew_date,
-            end_date__gte=now  # Not already expired
+            period_end__lte=renew_date,
+            period_end__gte=now  # Not already expired
         )
         
         renewed_count = 0
@@ -92,26 +102,26 @@ class SubscriptionService:
                     renewed_count += 1
                     logger.info(
                         f"Subscription renewed - User: {subscription.user.email}, "
-                        f"Plan: {subscription.plan_type}"
+                        f"Plan: {subscription.plan}"
                     )
                 else:
                     failed_count += 1
                     logger.warning(
                         f"Subscription renewal failed - User: {subscription.user.email}, "
-                        f"Plan: {subscription.plan_type}"
+                        f"Plan: {subscription.plan}"
                     )
             except Exception as e:
                 failed_count += 1
                 logger.error(
                     f"Error renewing subscription - User: {subscription.user.email}, "
-                    f"Plan: {subscription.plan_type}, Error: {str(e)}",
+                    f"Plan: {subscription.plan}, Error: {str(e)}",
                     exc_info=True
                 )
         
         # Mark expired subscriptions
         expired = Subscription.objects.filter(
             status='active',
-            end_date__lt=now
+            period_end__lt=now
         )
         
         expired_count = expired.update(status='expired')
@@ -153,7 +163,7 @@ class SubscriptionService:
         subscription.cancel()
         
         logger.info(
-            f"Subscription cancelled - User: {user.email}, Plan: {subscription.plan_type}"
+            f"Subscription cancelled - User: {user.email}, Plan: {subscription.plan}"
         )
         
         return subscription
@@ -173,24 +183,24 @@ class SubscriptionService:
                 'has_subscription': False,
                 'plan': None,
                 'status': None,
-                'end_date': None,
+                'period_end': None,
                 'auto_renew': False,
                 'monthly_credits': 0,
             }
         
-        plan_config = SUBSCRIPTION_PLANS.get(subscription.plan_type, {})
+        plan_config = SUBSCRIPTION_PLANS.get(subscription.plan, {})
         
         return {
             'has_subscription': True,
-            'plan': subscription.plan_type,
-            'plan_name': plan_config.get('name', subscription.plan_type),
+            'plan': subscription.plan,
+            'plan_name': plan_config.get('name', subscription.plan),
             'status': subscription.status,
             'start_date': subscription.start_date,
-            'end_date': subscription.end_date,
+            'period_start': subscription.period_start,
+            'period_end': subscription.period_end,
+            'next_renewal_date': subscription.next_renewal_date,
             'auto_renew': subscription.auto_renew,
             'monthly_credits': plan_config.get('credits', 0),
-            'credits_granted': subscription.credits_granted,
-            'credits_used_this_period': subscription.credits_used_this_period,
-            'days_remaining': (subscription.end_date - timezone.now()).days if subscription.end_date > timezone.now() else 0,
+            'days_remaining': (subscription.period_end - timezone.now()).days if subscription.period_end and subscription.period_end > timezone.now() else 0,
         }
 

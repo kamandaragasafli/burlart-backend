@@ -19,7 +19,7 @@ from .serializers import (
 from .services import VideoGenerationService, ImageGenerationService, SubscriptionService, TopUpService
 from .models import VideoGeneration, ImageGeneration, Subscription, CreditPurchase
 from .subscription_service import SubscriptionService
-from .constants import SUBSCRIPTION_PLANS
+from .subscription_constants import SUBSCRIPTION_PLANS
 
 logger = logging.getLogger(__name__)
 
@@ -468,13 +468,13 @@ class SubscriptionPlansView(APIView):
 
 
 class SubscriptionCreateView(APIView):
-    """Create a new subscription"""
+    """Create a new subscription and payment"""
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
         plan = request.data.get('plan') or request.data.get('plan_type')  # Support both
         auto_renew = request.data.get('auto_renew', True)
-        payment_id = request.data.get('payment_id')  # From payment processor
+        payment_id = request.data.get('payment_id')  # From payment processor (if payment already completed)
         
         if not plan:
             return Response(
@@ -489,20 +489,74 @@ class SubscriptionCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        plan_config = SUBSCRIPTION_PLANS[plan]
+        
         try:
+            # If payment_id is provided, payment is already completed (from webhook)
+            if payment_id:
+                subscription = SubscriptionService.create_subscription(
+                    user=request.user,
+                    plan_type=plan,
+                    auto_renew=auto_renew,
+                    payment_id=payment_id
+                )
+                
+                subscription_info = SubscriptionService.get_subscription_info(request.user)
+                
+                return Response({
+                    'message': 'Subscription created successfully',
+                    'subscription': subscription_info,
+                }, status=status.HTTP_201_CREATED)
+            
+            # Otherwise, create subscription (pending) and payment, then return payment URL
+            from .payment_service import PaymentService
+            
+            # Create subscription in pending status (will be activated after payment via webhook)
             subscription = SubscriptionService.create_subscription(
                 user=request.user,
-                plan=plan,
+                plan_type=plan,
                 auto_renew=auto_renew,
-                payment_id=payment_id
+                payment_id=None,  # Will be set after payment
+            )
+            # Subscription is already in pending status (not activated)
+            
+            # Create payment record linked to subscription
+            payment, fees = PaymentService.create_payment(
+                user=request.user,
+                payment_type='subscription',
+                amount=plan_config['price'],
+                currency=plan_config.get('currency', '₼'),
+                subscription=subscription,
             )
             
-            subscription_info = SubscriptionService.get_subscription_info(request.user)
+            # Process payment through E-point
+            payment_obj, epoint_result = PaymentService.process_payment(payment.id)
             
+            if not epoint_result.get('success'):
+                return Response(
+                    {'error': epoint_result.get('message', 'Payment creation failed')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # If this is a mock payment (TEST_MODE), auto-complete it
+            from .payment_service import EPointService
+            if EPointService.TEST_MODE or 'mock=true' in epoint_result.get('payment_url', ''):
+                # Auto-complete mock payment
+                try:
+                    PaymentService.complete_payment(payment.id, epoint_result.get('transaction_id'))
+                    subscription.refresh_from_db()
+                    request.user.refresh_from_db()
+                except Exception as e:
+                    logger.warning(f"Mock payment auto-completion failed: {e}")
+            
+            # Return payment URL for redirect
             return Response({
-                'message': 'Subscription created successfully',
-                'subscription': subscription_info,
-            }, status=status.HTTP_201_CREATED)
+                'subscription_id': subscription.id,
+                'payment_id': payment.id,
+                'payment_url': epoint_result.get('payment_url'),
+                'transaction_id': epoint_result.get('transaction_id'),
+                'message': 'Payment created. Redirect to payment_url to complete payment.',
+            }, status=status.HTTP_200_OK)
         
         except ValueError as e:
             return Response(
@@ -564,12 +618,12 @@ class TopUpPackagesView(APIView):
 
 
 class TopUpCreateView(APIView):
-    """Create a top-up credit purchase"""
+    """Create a top-up credit purchase and payment"""
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
         package = request.data.get('package')
-        payment_id = request.data.get('payment_id')  # From payment processor
+        payment_id = request.data.get('payment_id')  # From payment processor (if payment already completed)
         
         if not package:
             return Response(
@@ -578,36 +632,99 @@ class TopUpCreateView(APIView):
             )
         
         try:
-            purchase, payment = TopUpService.create_topup(
+            # If payment_id is provided, payment is already completed (from webhook)
+            if payment_id:
+                purchase, payment = TopUpService.create_topup(
+                    user=request.user,
+                    package=package,
+                    payment_id=payment_id
+                )
+                
+                # Complete the payment
+                from .payment_service import PaymentService
+                try:
+                    PaymentService.complete_payment(payment.id, payment_id)
+                    purchase.refresh_from_db()
+                    request.user.refresh_from_db()
+                except Exception as e:
+                    logger.warning(f"Payment completion failed: {e}")
+                
+                return Response({
+                    'message': 'Top-up purchase created successfully',
+                    'purchase_id': purchase.id,
+                    'payment_id': payment.id,
+                    'status': purchase.status,
+                    'credits': purchase.total_credits,
+                    'user_credits': request.user.credits,
+                    'payment_status': payment.status,
+                }, status=status.HTTP_201_CREATED)
+            
+            # Otherwise, create purchase and payment, then return payment URL
+            from .topup_constants import TOPUP_PACKAGES
+            from .payment_service import PaymentService
+            from .models import CreditPurchase
+            
+            package_config = TOPUP_PACKAGES.get(package)
+            if not package_config:
+                return Response(
+                    {'error': f'Invalid package: {package}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create purchase record (pending, without payment_id yet)
+            purchase = CreditPurchase.objects.create(
                 user=request.user,
                 package=package,
-                payment_id=payment_id
+                status='pending',
+                credits_purchased=package_config['credits'],
+                bonus_credits=0,
+                total_credits=package_config['credits'],
+                price=package_config['price'],
+                currency=package_config.get('currency', '₼'),
+                payment_id=None,  # Will be set after payment is created
             )
             
-            # In test mode, auto-complete payment (E-point integration not active yet)
-            # In production, wait for E-point webhook/confirmation
-            from .payment_service import PaymentService
-            try:
-                PaymentService.complete_payment(payment.id, payment_id)
-                purchase.refresh_from_db()
-                request.user.refresh_from_db()
-            except Exception as e:
-                logger.warning(f"Payment auto-completion failed (test mode): {e}")
+            # Create payment record
+            payment, fees = PaymentService.create_payment(
+                user=request.user,
+                payment_type='topup',
+                amount=package_config['price'],
+                currency=package_config.get('currency', '₼'),
+                credit_purchase=purchase,
+            )
             
+            # Link payment to purchase
+            purchase.payment_id = payment.id
+            purchase.save()
+            
+            # Process payment through E-point
+            payment_obj, epoint_result = PaymentService.process_payment(payment.id)
+            
+            if not epoint_result.get('success'):
+                return Response(
+                    {'error': epoint_result.get('message', 'Payment creation failed')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # If this is a mock payment (TEST_MODE), auto-complete it
+            from .payment_service import EPointService
+            if EPointService.TEST_MODE or 'mock=true' in epoint_result.get('payment_url', ''):
+                # Auto-complete mock payment
+                try:
+                    PaymentService.complete_payment(payment.id, epoint_result.get('transaction_id'))
+                    purchase.refresh_from_db()
+                    request.user.refresh_from_db()
+                except Exception as e:
+                    logger.warning(f"Mock payment auto-completion failed: {e}")
+            
+            # Return payment URL for redirect
             return Response({
-                'message': 'Top-up purchase created successfully',
                 'purchase_id': purchase.id,
                 'payment_id': payment.id,
-                'status': purchase.status,
-                'credits': purchase.total_credits,
-                'user_credits': request.user.credits,
-                'payment_status': payment.status,
-                'fees': {
-                    'commission': float(payment.commission) if payment.commission else 0,
-                    'tax': float(payment.tax) if payment.tax else 0,
-                    'net_amount': float(payment.net_amount) if payment.net_amount else 0,
-                },
-            }, status=status.HTTP_201_CREATED)
+                'payment_url': epoint_result.get('payment_url'),
+                'transaction_id': epoint_result.get('transaction_id'),
+                'message': 'Payment created. Redirect to payment_url to complete payment.',
+            }, status=status.HTTP_200_OK)
         
         except ValueError as e:
             return Response(
@@ -684,3 +801,101 @@ class TopUpHistoryView(generics.ListAPIView):
             for p in purchases
         ]
         return Response(data)
+
+
+# E-point Payment Callback Views
+class PaymentSuccessView(APIView):
+    """Handle successful payment redirect from E-point"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """User is redirected here after successful payment"""
+        from django.shortcuts import redirect
+        
+        transaction_id = request.GET.get('transaction_id')
+        logger.info(f"Payment success callback - Transaction ID: {transaction_id}")
+        
+        # Redirect to frontend success page
+        # Frontend will poll or check payment status
+        from django.conf import settings
+        frontend_url = f"{settings.FRONTEND_URL}/checkout/success?transaction_id={transaction_id}"
+        return redirect(frontend_url)
+
+
+class PaymentErrorView(APIView):
+    """Handle failed payment redirect from E-point"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """User is redirected here after failed payment"""
+        from django.shortcuts import redirect
+        
+        transaction_id = request.GET.get('transaction_id')
+        error = request.GET.get('error', 'Unknown error')
+        logger.warning(f"Payment error callback - Transaction ID: {transaction_id}, Error: {error}")
+        
+        # Redirect to frontend error page
+        from django.conf import settings
+        frontend_url = f"{settings.FRONTEND_URL}/checkout/cancel?transaction_id={transaction_id}&error={error}"
+        return redirect(frontend_url)
+
+
+class PaymentWebhookView(APIView):
+    """Handle E-point webhook notifications (result callback)"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """E-point sends POST request here when payment status changes"""
+        from .payment_service import PaymentService, EPointService
+        from .models import Payment
+        
+        try:
+            # Get webhook data
+            webhook_data = request.data
+            transaction_id = webhook_data.get('transaction_id')
+            payment_status = webhook_data.get('status')
+            
+            logger.info(f"Payment webhook received - Transaction: {transaction_id}, Status: {payment_status}")
+            
+            # Process webhook
+            result = EPointService.process_webhook(webhook_data)
+            
+            if not result.get('success'):
+                logger.error(f"Webhook processing failed: {result.get('message')}")
+                return Response(
+                    {'error': result.get('message')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Find payment by E-point transaction ID
+            try:
+                payment = Payment.objects.get(epoint_transaction_id=transaction_id)
+                
+                # Complete payment if status is 'completed' or 'success'
+                if payment_status in ['completed', 'success']:
+                    PaymentService.complete_payment(payment.id, transaction_id)
+                    logger.info(f"Payment completed via webhook - Payment ID: {payment.id}")
+                elif payment_status in ['failed', 'cancelled']:
+                    payment.status = 'failed'
+                    payment.notes = f"Payment {payment_status} via E-point"
+                    payment.save()
+                    logger.warning(f"Payment failed via webhook - Payment ID: {payment.id}")
+                
+            except Payment.DoesNotExist:
+                logger.error(f"Payment not found for transaction ID: {transaction_id}")
+                return Response(
+                    {'error': 'Payment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            return Response({
+                'success': True,
+                'message': 'Webhook processed',
+            })
+            
+        except Exception as e:
+            logger.error(f"Webhook processing error: {str(e)}", exc_info=True)
+            return Response(
+                {'error': 'Webhook processing failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

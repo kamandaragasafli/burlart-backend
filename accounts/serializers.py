@@ -15,11 +15,13 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         }
     
     def create(self, validated_data):
+        # New users start with 0 credits
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
             language=validated_data.get('language', 'en'),
             theme=validated_data.get('theme', 'dark'),
+            credits=0,  # Start with 0 credits
         )
         return user
 

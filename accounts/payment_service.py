@@ -1,10 +1,14 @@
 """
 Payment Service for E-point integration
-Currently in TEST/MOCK mode - not active yet
 """
 import logging
+import requests
+import json
+import base64
+import hashlib
 from decimal import Decimal
 from django.utils import timezone
+from django.conf import settings
 from .models import Payment, Subscription, CreditPurchase
 
 logger = logging.getLogger(__name__)
@@ -12,46 +16,228 @@ logger = logging.getLogger(__name__)
 
 class EPointService:
     """
-    E-point payment provider service (MOCK/TEST MODE)
-    In production, this would integrate with actual E-point API
+    E-point payment provider service
     """
     
-    # Configuration (would be in settings in production)
-    TEST_MODE = True  # Currently in test mode
-    API_URL = "https://api.epoint.az"  # Placeholder - not active yet
-    API_KEY = None  # Would be in environment variables
+    # Configuration from Django settings
+    TEST_MODE = getattr(settings, 'EPOINT_TEST_MODE', True)
+    API_URL = getattr(settings, 'EPOINT_API_URL', 'https://epoint.az/api/1')
+    PUBLIC_KEY = getattr(settings, 'EPOINT_PUBLIC_KEY', None)
+    SECRET_KEY = getattr(settings, 'EPOINT_SECRET_KEY', None)
     
     @staticmethod
-    def create_payment(amount, currency='₼', description='', user=None):
+    def _generate_signature(data: str, private_key: str) -> str:
         """
-        Create payment request with E-point (MOCK)
-        In production, this would make actual API call to E-point
+        Generate E-point signature: base64_encode(sha1(private_key + data + private_key))
         """
-        if EPointService.TEST_MODE:
-            # Mock response
+        # Create SHA1 hash: private_key + data + private_key
+        hash_string = private_key + data + private_key
+        sha1_hash = hashlib.sha1(hash_string.encode('utf-8')).digest()
+        # Base64 encode the hash
+        signature = base64.b64encode(sha1_hash).decode('utf-8')
+        return signature
+    
+    @staticmethod
+    def create_payment(amount, currency='AZN', description='', user=None, order_id=None):
+        """
+        Create payment request with E-point
+        
+        Args:
+            amount: Payment amount
+            currency: Currency code (₼, AZN, USD, EUR)
+            description: Payment description
+            user: User instance
+            order_id: Order ID (required by E-point API)
+        """
+        # Convert currency symbol to ISO code for E-point API
+        currency_map = {
+            '₼': 'AZN',
+            'AZN': 'AZN',
+            'USD': 'USD',
+            'EUR': 'EUR',
+        }
+        currency_code = currency_map.get(currency, 'AZN')
+        
+        # Generate order_id if not provided
+        if not order_id:
+            order_id = f"ORDER_{int(timezone.now().timestamp())}"
+        
+        # Check if we should use mock mode
+        # Auto-enable mock mode if using localhost URLs (E-point doesn't accept localhost)
+        backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000')
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        is_localhost = 'localhost' in backend_url or '127.0.0.1' in backend_url or 'localhost' in frontend_url or '127.0.0.1' in frontend_url
+        
+        if EPointService.TEST_MODE or is_localhost:
+            # Mock response for testing
+            if is_localhost and not EPointService.TEST_MODE:
+                logger.warning(f"EPOINT: Auto-enabling MOCK MODE because localhost URLs are being used. E-point API does not accept localhost URLs.")
+            
             logger.info(f"EPOINT MOCK: Creating payment - Amount: {amount} {currency}, User: {user.email if user else 'N/A'}")
             
             # Simulate E-point transaction ID
             mock_transaction_id = f"EPOINT_MOCK_{int(timezone.now().timestamp())}"
             
+            # In TEST_MODE, redirect to frontend success page (auto-complete payment)
+            payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true"
+            
             return {
                 'success': True,
                 'transaction_id': mock_transaction_id,
-                'payment_url': f"https://epoint.az/pay/{mock_transaction_id}",  # Mock payment URL
+                'payment_url': payment_url,  # Redirect to frontend success page in TEST_MODE
                 'status': 'pending',
-                'message': 'Payment created (MOCK MODE)',
+                'message': 'Payment created (MOCK MODE - localhost detected)' if is_localhost else 'Payment created (MOCK MODE)',
             }
-        else:
-            # Production code would make actual API call here
-            # response = requests.post(EPointService.API_URL + '/create', ...)
-            raise NotImplementedError("E-point integration not active yet")
+        
+        # Production: Real E-point API call
+        try:
+            logger.info(f"EPOINT: Creating payment - Amount: {amount} {currency}, User: {user.email if user else 'N/A'}")
+            
+            # Check if API credentials are configured
+            if not EPointService.PUBLIC_KEY or not EPointService.SECRET_KEY:
+                logger.warning("EPOINT: API credentials not configured, falling back to TEST_MODE")
+                # Fallback to mock mode
+                mock_transaction_id = f"EPOINT_MOCK_{int(timezone.now().timestamp())}"
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+                payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true"
+                return {
+                    'success': True,
+                    'transaction_id': mock_transaction_id,
+                    'payment_url': payment_url,
+                    'status': 'pending',
+                    'message': 'Payment created (MOCK MODE - credentials not configured)',
+                }
+            
+            # Prepare payment data for E-point (JSON format)
+            # Note: Amount should be string or number, order matters for signature
+            payment_data_json = {
+                'public_key': EPointService.PUBLIC_KEY,
+                'order_id': str(order_id),  # Required by E-point API
+                'amount': str(float(amount)),  # Convert to string for consistency
+                'currency': currency_code,  # Use converted currency code (AZN, USD, EUR)
+                'description': description or f'Payment {order_id}',
+                'language': 'az',
+                'success_redirect': f"{settings.FRONTEND_URL}/checkout/success",
+                'error_redirect': f"{settings.FRONTEND_URL}/checkout/cancel",
+                'callback_url': f"{settings.BACKEND_URL}/api/auth/payment/webhook",  # Backend webhook
+            }
+            
+            # Convert to JSON string (no spaces, no sorting - preserve order as E-point expects)
+            # E-point may be sensitive to key order for signature verification
+            json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=True)
+            
+            # Base64 encode the JSON string
+            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
+            
+            # Generate signature: base64_encode(sha1(private_key + data + private_key))
+            signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
+            
+            # Debug logging (remove in production)
+            logger.debug(f"EPOINT: JSON string: {json_string}")
+            logger.debug(f"EPOINT: Data encoded: {data_encoded}")
+            logger.debug(f"EPOINT: Signature: {signature}")
+            
+            # Prepare POST request payload
+            request_payload = {
+                'data': data_encoded,
+                'signature': signature
+            }
+            
+            # Make API request to E-point
+            logger.info(f"EPOINT: Sending request to {EPointService.API_URL}/request")
+            response = requests.post(
+                f"{EPointService.API_URL}/request",
+                data=request_payload,
+                headers={
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"EPOINT: Payment request successful - Response: {result}")
+                
+                # Check if E-point returned an error
+                if result.get('status') == 'error':
+                    error_message = result.get('message', 'Unknown error')
+                    logger.error(f"EPOINT: API returned error - {error_message}")
+                    
+                    # If signature error, provide detailed logging
+                    if 'signature' in error_message.lower() or 'Signature' in error_message:
+                        logger.error(f"EPOINT: Signature mismatch - Check SECRET_KEY in .env file")
+                        logger.error(f"EPOINT: Debug - JSON: {json_string[:200]}...")
+                        logger.error(f"EPOINT: Debug - Data encoded: {data_encoded[:100]}...")
+                    
+                    return {
+                        'success': False,
+                        'message': f'E-point API error: {error_message}',
+                    }
+                
+                # Get checkout URL from response
+                checkout_url = result.get('checkout_url') or result.get('url')
+                transaction_id = result.get('transaction_id') or result.get('id')
+                
+                if checkout_url:
+                    # Use the checkout_url from response
+                    payment_url = checkout_url
+                    
+                    logger.info(f"EPOINT: Payment created successfully - Transaction ID: {transaction_id}")
+                    return {
+                        'success': True,
+                        'transaction_id': transaction_id,
+                        'payment_url': payment_url,
+                        'status': 'pending',
+                        'message': 'Payment created successfully',
+                    }
+                else:
+                    logger.error(f"EPOINT: No checkout URL in response - {result}")
+                    return {
+                        'success': False,
+                        'message': 'E-point API did not return checkout URL',
+                    }
+            else:
+                logger.error(f"EPOINT: Payment creation failed - Status: {response.status_code}, Response: {response.text}")
+                return {
+                    'success': False,
+                    'message': f'E-point API error: {response.status_code}',
+                }
+        except requests.exceptions.RequestException as e:
+            # Network/connection errors - fallback to mock mode
+            logger.warning(f"EPOINT: Connection error - {str(e)}, falling back to TEST_MODE")
+            mock_transaction_id = f"EPOINT_MOCK_{int(timezone.now().timestamp())}"
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true"
+            return {
+                'success': True,
+                'transaction_id': mock_transaction_id,
+                'payment_url': payment_url,
+                'status': 'pending',
+                'message': 'Payment created (MOCK MODE - connection error)',
+            }
+        except Exception as e:
+            logger.error(f"EPOINT: Exception during payment creation - {str(e)}")
+            # Fallback to mock mode on any other error
+            mock_transaction_id = f"EPOINT_MOCK_{int(timezone.now().timestamp())}"
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true"
+            return {
+                'success': True,
+                'transaction_id': mock_transaction_id,
+                'payment_url': payment_url,
+                'status': 'pending',
+                'message': f'Payment created (MOCK MODE - {str(e)})',
+            }
     
     @staticmethod
     def check_payment_status(transaction_id):
         """
-        Check payment status with E-point (MOCK)
+        Check payment status with E-point
         """
-        if EPointService.TEST_MODE:
+        # Check if this is a mock transaction ID
+        is_mock = transaction_id and transaction_id.startswith('EPOINT_MOCK_')
+        
+        if EPointService.TEST_MODE or is_mock:
             logger.info(f"EPOINT MOCK: Checking payment status - Transaction ID: {transaction_id}")
             
             # Mock: Always return completed for test
@@ -61,15 +247,78 @@ class EPointService:
                 'transaction_id': transaction_id,
                 'message': 'Payment completed (MOCK MODE)',
             }
-        else:
-            # Production code would make actual API call here
-            raise NotImplementedError("E-point integration not active yet")
+        
+        # Production: Real E-point API call
+        try:
+            logger.info(f"EPOINT: Checking payment status - Transaction ID: {transaction_id}")
+            
+            # Prepare status check data
+            status_data_json = {
+                'public_key': EPointService.PUBLIC_KEY,
+                'transaction_id': transaction_id,
+            }
+            
+            # Convert to JSON string
+            json_string = json.dumps(status_data_json, separators=(',', ':'))
+            
+            # Base64 encode the JSON string
+            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
+            
+            # Generate signature
+            signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
+            
+            # Prepare POST request payload
+            request_payload = {
+                'data': data_encoded,
+                'signature': signature
+            }
+            
+            response = requests.post(
+                f"{EPointService.API_URL}/status",
+                data=request_payload,
+                headers={
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"EPOINT: Payment status retrieved - Status: {result.get('status')}")
+                return {
+                    'success': True,
+                    'status': result.get('status'),  # e.g., 'completed', 'pending', 'failed'
+                    'transaction_id': transaction_id,
+                    'message': 'Status retrieved successfully',
+                }
+            else:
+                logger.error(f"EPOINT: Status check failed - Status: {response.status_code}")
+                return {
+                    'success': False,
+                    'status': 'unknown',
+                    'message': f'E-point API error: {response.status_code}',
+                }
+        except Exception as e:
+            logger.error(f"EPOINT: Exception during status check - {str(e)}")
+            # If it's a mock transaction, return completed
+            if is_mock:
+                return {
+                    'success': True,
+                    'status': 'completed',
+                    'transaction_id': transaction_id,
+                    'message': 'Payment completed (MOCK MODE)',
+                }
+            return {
+                'success': False,
+                'status': 'unknown',
+                'message': f'E-point API exception: {str(e)}',
+            }
     
     @staticmethod
     def process_webhook(data):
         """
-        Process webhook from E-point (MOCK)
-        In production, this would verify webhook signature and process payment
+        Process webhook from E-point
+        This is called by E-point when payment status changes
         """
         if EPointService.TEST_MODE:
             logger.info(f"EPOINT MOCK: Processing webhook - Data: {data}")
@@ -77,9 +326,39 @@ class EPointService:
                 'success': True,
                 'message': 'Webhook processed (MOCK MODE)',
             }
-        else:
-            # Production code would verify webhook and process payment
-            raise NotImplementedError("E-point integration not active yet")
+        
+        # Production: Verify and process E-point webhook
+        try:
+            logger.info(f"EPOINT: Processing webhook - Transaction ID: {data.get('transaction_id')}")
+            
+            # Verify webhook authenticity (E-point should provide signature verification)
+            # For now, we'll just check if required fields are present
+            required_fields = ['transaction_id', 'status', 'amount']
+            if not all(field in data for field in required_fields):
+                logger.error(f"EPOINT: Invalid webhook data - Missing required fields")
+                return {
+                    'success': False,
+                    'message': 'Invalid webhook data',
+                }
+            
+            # Process the payment based on status
+            transaction_id = data.get('transaction_id')
+            status = data.get('status')
+            
+            logger.info(f"EPOINT: Webhook processed - Transaction: {transaction_id}, Status: {status}")
+            
+            return {
+                'success': True,
+                'transaction_id': transaction_id,
+                'status': status,
+                'message': 'Webhook processed successfully',
+            }
+        except Exception as e:
+            logger.error(f"EPOINT: Exception during webhook processing - {str(e)}")
+            return {
+                'success': False,
+                'message': f'Webhook processing exception: {str(e)}',
+            }
 
 
 class PaymentService:
@@ -128,6 +407,7 @@ class PaymentService:
             currency=payment.currency,
             description=f"{payment.payment_type} payment",
             user=payment.user,
+            order_id=payment.id,  # Use payment ID as order_id
         )
         
         if not epoint_result.get('success'):

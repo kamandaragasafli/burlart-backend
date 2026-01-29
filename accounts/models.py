@@ -35,7 +35,7 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
-    credits = models.IntegerField(default=500)
+    credits = models.IntegerField(default=0)
     language = models.CharField(max_length=5, default='en')
     theme = models.CharField(max_length=10, default='dark')
 
@@ -147,6 +147,7 @@ class Subscription(models.Model):
     Supports auto-renewal and credit rollover management
     """
     PLAN_CHOICES = [
+        ('demo', 'Demo'),
         ('starter', 'Starter'),
         ('pro', 'Pro'),
         ('agency', 'Agency'),

@@ -16,43 +16,43 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 VIDEO_TOOL_CONFIG = {
     'pika': {
-        'credits': 35,
+        'credits': 52,
         'model': 'fal-ai/pika/v2.2/text-to-video',
         'name': 'Pika Labs',
         'has_sound': False
     },
     'seedance': {
-        'credits': 45,
+        'credits': 39,
         'model': 'fal-ai/bytedance/seedance/v1/pro/fast/text-to-video',
         'name': 'Seedance',
         'has_sound': True
     },
     'wan': {
-        'credits': 55,
+        'credits': 24,
         'model': 'wan/v2.6/text-to-video',
         'name': 'Wan',
         'has_sound': False
     },
     'luma': {
-        'credits': 70,
+        'credits': 32,
         'model': 'fal-ai/luma-photon/text-to-video',
         'name': 'Luma AI',
         'has_sound': True
     },
     'kling': {
-        'credits': 120,
+        'credits': 55,
         'model': 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
         'name': 'Kling AI',
         'has_sound': True
     },
     'veo': {
-        'credits': 135,
+        'credits': 238,
         'model': 'fal-ai/veo3',
         'name': 'Veo',
         'has_sound': True
     },
     'sora': {
-        'credits': 285,
+        'credits': 79,
         'model': 'fal-ai/sora-2/text-to-video',
         'name': 'Sora',
         'has_sound': False
@@ -64,32 +64,32 @@ VIDEO_TOOL_CONFIG = {
 # ============================================================================
 IMAGE_TOOL_CONFIG = {
     'gpt-image': {
-        'credits': 10,
+        'credits': 16,
         'model': 'fal-ai/gpt-image-1.5',
         'name': 'GPT Image',
     },
     'nano-banana': {
-        'credits': 12,
+        'credits': 47,
         'model': 'fal-ai/nano-banana-pro',
         'name': 'Nano Banana',
     },
     'seedream': {
-        'credits': 15,
+        'credits': 6,
         'model': 'fal-ai/bytedance/seedream/v4.5/text-to-image',
         'name': 'Seedream',
     },
     'flux': {
-        'credits': 20,
+        'credits': 6,
         'model': 'fal-ai/flux-2-pro',
         'name': 'Flux',
     },
     'z-image': {
-        'credits': 18,
+        'credits': 2,
         'model': 'fal-ai/z-image/turbo/lora',
         'name': 'Z-Image',
     },
     'qwen': {
-        'credits': 16,
+        'credits': 6,
         'model': 'fal-ai/qwen-image-2512',
         'name': 'Qwen',
     },

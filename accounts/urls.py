@@ -22,6 +22,9 @@ from .views import (
     TopUpCreateView,
     TopUpCompleteView,
     TopUpHistoryView,
+    PaymentSuccessView,
+    PaymentErrorView,
+    PaymentWebhookView,
 )
 
 urlpatterns = [
@@ -62,4 +65,9 @@ urlpatterns = [
     path('topup/create/', TopUpCreateView.as_view(), name='topup-create'),
     path('topup/complete/', TopUpCompleteView.as_view(), name='topup-complete'),
     path('topup/history/', TopUpHistoryView.as_view(), name='topup-history'),
+    
+    # E-point Payment Callbacks
+    path('payment/success/', PaymentSuccessView.as_view(), name='payment-success'),
+    path('payment/error/', PaymentErrorView.as_view(), name='payment-error'),
+    path('payment/webhook/', PaymentWebhookView.as_view(), name='payment-webhook'),
 ]
