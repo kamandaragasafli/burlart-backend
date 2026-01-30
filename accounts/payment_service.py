@@ -38,7 +38,7 @@ class EPointService:
         return signature
     
     @staticmethod
-    def create_payment(amount, currency='AZN', description='', user=None, order_id=None):
+    def create_payment(amount, currency='AZN', description='', user=None, order_id=None, payment_type=None):
         """
         Create payment request with E-point
         
@@ -48,6 +48,7 @@ class EPointService:
             description: Payment description
             user: User instance
             order_id: Order ID (required by E-point API)
+            payment_type: Payment type ('subscription' or 'topup') for success page redirect
         """
         # Convert currency symbol to ISO code for E-point API
         currency_map = {
@@ -71,9 +72,11 @@ class EPointService:
             # Simulate E-point transaction ID
             mock_transaction_id = f"EPOINT_MOCK_{int(timezone.now().timestamp())}"
             
-            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
             # In TEST_MODE, redirect to frontend success page (auto-complete payment)
-            payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true"
+            # Add type parameter for proper success page handling
+            type_param = f"&type={payment_type}" if payment_type else ""
+            payment_url = f"{frontend_url}/checkout/success?transaction_id={mock_transaction_id}&mock=true{type_param}"
             
             return {
                 'success': True,
@@ -435,6 +438,7 @@ class PaymentService:
             description=f"{payment.payment_type} payment",
             user=payment.user,
             order_id=payment.id,  # Use payment ID as order_id
+            payment_type=payment.payment_type,  # Pass payment type for success page
         )
         
         if not epoint_result.get('success'):
