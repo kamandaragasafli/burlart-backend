@@ -132,17 +132,18 @@ class EPointService:
             signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
             
             # Debug logging for signature verification
-            logger.debug(f"EPOINT: JSON string: {json_string}")
-            logger.debug(f"EPOINT: Data encoded: {data_encoded}")
-            logger.debug(f"EPOINT: SECRET_KEY length: {len(EPointService.SECRET_KEY) if EPointService.SECRET_KEY else 0}")
-            logger.debug(f"EPOINT: SECRET_KEY first 5 chars: {EPointService.SECRET_KEY[:5] if EPointService.SECRET_KEY else 'N/A'}...")
-            logger.debug(f"EPOINT: Signature: {signature}")
+            logger.info(f"EPOINT: JSON string: {json_string}")
+            logger.info(f"EPOINT: Data encoded: {data_encoded}")
+            logger.info(f"EPOINT: SECRET_KEY length: {len(EPointService.SECRET_KEY) if EPointService.SECRET_KEY else 0}")
+            logger.info(f"EPOINT: SECRET_KEY (full): {EPointService.SECRET_KEY}")
+            logger.info(f"EPOINT: Signature: {signature}")
             
             # Verify signature generation manually for debugging
             hash_string = EPointService.SECRET_KEY + data_encoded + EPointService.SECRET_KEY
+            logger.info(f"EPOINT: Hash string (first 50 chars): {hash_string[:50]}...")
             sha1_hash = hashlib.sha1(hash_string.encode('utf-8')).digest()
             manual_signature = base64.b64encode(sha1_hash).decode('utf-8')
-            logger.debug(f"EPOINT: Manual signature check: {manual_signature}")
+            logger.info(f"EPOINT: Manual signature check: {manual_signature}")
             if signature != manual_signature:
                 logger.error(f"EPOINT: Signature mismatch in generation! Expected: {manual_signature}, Got: {signature}")
             
