@@ -298,6 +298,13 @@ class Subscription(models.Model):
             self.status = 'past_due'
             self.save()
             return False, payment
+    
+    def cancel(self):
+        """Cancel subscription (no auto-renew)"""
+        self.auto_renew = False
+        self.cancelled_at = timezone.now()
+        self.status = 'cancelled'
+        self.save()
 
 
 class Payment(models.Model):
@@ -481,28 +488,6 @@ class CreditHold(models.Model):
         self.save()
         
         return True
-
-    def cancel(self):
-        """Cancel subscription (no auto-renew)"""
-        self.auto_renew = False
-        self.cancelled_at = timezone.now()
-        self.status = 'cancelled'
-        self.save()
-    
-    def activate(self):
-        """Activate subscription and grant initial credits"""
-        from .subscription_constants import SUBSCRIPTION_PLANS
-        
-        self.status = 'active'
-        self.next_renewal_date = timezone.now() + timedelta(days=30)
-        self.save()
-        
-        # Grant initial credits
-        plan_config = SUBSCRIPTION_PLANS.get(self.plan)
-        if plan_config:
-            monthly_credits = plan_config['credits']
-            self.user.credits = monthly_credits
-            self.user.save()
 
 
 class CreditPurchase(models.Model):
