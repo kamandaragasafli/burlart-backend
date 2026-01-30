@@ -142,7 +142,7 @@ class GoogleLoginView(APIView):
             user, created = User.objects.get_or_create(
                 email=email,
                 defaults={
-                    'credits': 500,
+                    'credits': 0,  # New users start with 0 credits
                     'language': 'en',
                     'theme': 'dark',
                 },
@@ -845,20 +845,30 @@ class PaymentWebhookView(APIView):
     permission_classes = [AllowAny]
     
     def post(self, request):
-        """E-point sends POST request here when payment status changes"""
+        """E-point sends POST request here when payment status changes
+        
+        E-point sends 'data' (base64 encoded) and 'signature' parameters via POST
+        as per documentation page 7 (Callback funksiyasının icra edilməsi)
+        """
         from .payment_service import PaymentService, EPointService
         from .models import Payment
         
         try:
-            # Get webhook data
-            webhook_data = request.data
-            transaction_id = webhook_data.get('transaction_id')
-            payment_status = webhook_data.get('status')
+            # Get webhook parameters (data and signature from E-point)
+            data_encoded = request.data.get('data') or request.POST.get('data')
+            signature_received = request.data.get('signature') or request.POST.get('signature')
             
-            logger.info(f"Payment webhook received - Transaction: {transaction_id}, Status: {payment_status}")
+            if not data_encoded or not signature_received:
+                logger.error(f"Payment webhook missing required parameters - data: {bool(data_encoded)}, signature: {bool(signature_received)}")
+                return Response(
+                    {'error': 'Missing required parameters: data and signature'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
-            # Process webhook
-            result = EPointService.process_webhook(webhook_data)
+            logger.info(f"Payment webhook received - Data length: {len(data_encoded)}, Signature: {signature_received[:20]}...")
+            
+            # Process webhook (verify signature and decode data)
+            result = EPointService.process_webhook(data_encoded, signature_received)
             
             if not result.get('success'):
                 logger.error(f"Webhook processing failed: {result.get('message')}")
@@ -867,26 +877,50 @@ class PaymentWebhookView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Find payment by E-point transaction ID
+            # Get decoded webhook data
+            webhook_data = result.get('data', {})
+            transaction_id = webhook_data.get('transaction')  # E-point uses 'transaction' not 'transaction_id'
+            payment_status = webhook_data.get('status')
+            order_id = webhook_data.get('order_id')
+            
+            logger.info(f"Webhook decoded - Order: {order_id}, Transaction: {transaction_id}, Status: {payment_status}")
+            
+            # Find payment by order_id (our Payment ID) or E-point transaction ID
+            payment = None
             try:
-                payment = Payment.objects.get(epoint_transaction_id=transaction_id)
-                
-                # Complete payment if status is 'completed' or 'success'
-                if payment_status in ['completed', 'success']:
-                    PaymentService.complete_payment(payment.id, transaction_id)
-                    logger.info(f"Payment completed via webhook - Payment ID: {payment.id}")
-                elif payment_status in ['failed', 'cancelled']:
-                    payment.status = 'failed'
-                    payment.notes = f"Payment {payment_status} via E-point"
-                    payment.save()
-                    logger.warning(f"Payment failed via webhook - Payment ID: {payment.id}")
-                
+                # Try to find by order_id first (which is our Payment ID)
+                if order_id:
+                    payment = Payment.objects.get(id=order_id)
+                # Fallback to E-point transaction ID
+                elif transaction_id:
+                    payment = Payment.objects.get(epoint_transaction_id=transaction_id)
+                else:
+                    raise Payment.DoesNotExist
+                    
             except Payment.DoesNotExist:
-                logger.error(f"Payment not found for transaction ID: {transaction_id}")
+                logger.error(f"Payment not found - Order ID: {order_id}, Transaction: {transaction_id}")
                 return Response(
                     {'error': 'Payment not found'},
                     status=status.HTTP_404_NOT_FOUND
                 )
+            
+            # Update payment with E-point transaction ID if not set
+            if transaction_id and not payment.epoint_transaction_id:
+                payment.epoint_transaction_id = transaction_id
+                payment.save()
+            
+            # Complete payment if status is 'success'
+            if payment_status == 'success':
+                PaymentService.complete_payment(payment.id, transaction_id)
+                logger.info(f"Payment completed via webhook - Payment ID: {payment.id}")
+            elif payment_status in ['failed', 'error']:
+                payment.status = 'failed'
+                payment.notes = f"Payment {payment_status} via E-point - {webhook_data.get('message', '')}"
+                payment.save()
+                logger.warning(f"Payment failed via webhook - Payment ID: {payment.id}")
+            else:
+                # Other statuses: new, returned, server_error
+                logger.info(f"Payment status update via webhook - Payment ID: {payment.id}, Status: {payment_status}")
             
             return Response({
                 'success': True,

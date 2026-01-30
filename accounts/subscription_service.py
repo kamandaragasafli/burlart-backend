@@ -147,26 +147,45 @@ class SubscriptionService:
             subscription_id: Optional subscription ID, if None cancels active subscription
         
         Returns:
-            Subscription instance or None
+            Subscription instance
+        
+        Raises:
+            ValueError: If no subscription found or already cancelled
         """
-        if subscription_id:
-            subscription = Subscription.objects.filter(
-                user=user,
-                id=subscription_id
-            ).first()
-        else:
-            subscription = user.active_subscription
-        
-        if not subscription:
-            raise ValueError("No active subscription found")
-        
-        subscription.cancel()
-        
-        logger.info(
-            f"Subscription cancelled - User: {user.email}, Plan: {subscription.plan}"
-        )
-        
-        return subscription
+        try:
+            if subscription_id:
+                subscription = Subscription.objects.filter(
+                    user=user,
+                    id=subscription_id
+                ).first()
+            else:
+                # Get active subscription
+                subscription = user.active_subscription
+            
+            if not subscription:
+                logger.warning(f"No active subscription found for user: {user.email}")
+                raise ValueError("No active subscription found. Please subscribe to a plan first.")
+            
+            # Check if already cancelled
+            if subscription.status == 'cancelled':
+                logger.warning(f"Subscription already cancelled - User: {user.email}, Subscription ID: {subscription.id}")
+                raise ValueError("Subscription is already cancelled")
+            
+            # Cancel the subscription
+            subscription.cancel()
+            
+            logger.info(
+                f"Subscription cancelled successfully - User: {user.email}, Plan: {subscription.plan}, Subscription ID: {subscription.id}"
+            )
+            
+            return subscription
+            
+        except Subscription.DoesNotExist:
+            logger.error(f"Subscription DoesNotExist error for user: {user.email}")
+            raise ValueError("No subscription found. Please subscribe to a plan first.")
+        except Exception as e:
+            logger.error(f"Error cancelling subscription for user {user.email}: {str(e)}", exc_info=True)
+            raise
     
     @staticmethod
     def get_user_subscription(user):
