@@ -97,27 +97,27 @@ class EPointService:
             
             # Prepare payment data for E-point (JSON format)
             # IMPORTANT: Key order matters for signature verification (as per E-point docs page 5)
-            # According to E-point documentation example, the order should be:
-            # public_key, amount, currency, description, order_id (from example)
+            # According to E-point documentation example: {"public_key":"...","amount":"...","currency":"...","description":"...","order_id":"..."}
             # But required params are: public_key, amount, currency, language, order_id
             # Optional: description, success_redirect_url, error_redirect_url
             # Remove trailing slashes from URLs to avoid double slashes
             frontend_url = settings.FRONTEND_URL.rstrip('/')
             
             # Build JSON string with exact key order as per E-point documentation
-            # Order: public_key, amount, currency, language, order_id, description, success_redirect_url, error_redirect_url
+            # Order based on doc example: public_key, amount, currency, language, description, order_id, success_redirect_url, error_redirect_url
             from collections import OrderedDict
             payment_data_json = OrderedDict([
                 ('public_key', EPointService.PUBLIC_KEY),
                 ('amount', str(float(amount))),
                 ('currency', currency_code),
                 ('language', 'az'),
-                ('order_id', str(order_id)),
             ])
             
-            # Add optional fields only if they have values
+            # Add description before order_id (as per doc example)
             if description:
                 payment_data_json['description'] = description
+            
+            payment_data_json['order_id'] = str(order_id)
             payment_data_json['success_redirect_url'] = f"{frontend_url}/checkout/success"
             payment_data_json['error_redirect_url'] = f"{frontend_url}/checkout/cancel"
             
