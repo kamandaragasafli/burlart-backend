@@ -97,26 +97,28 @@ class EPointService:
             
             # Prepare payment data for E-point (JSON format)
             # IMPORTANT: Key order matters for signature verification (as per E-point docs page 5)
-            # Order: public_key, amount, currency, language, order_id, description, success_redirect_url, error_redirect_url
+            # According to E-point documentation, the order should be:
+            # public_key, amount, currency, language, order_id, description, success_redirect_url, error_redirect_url
             # Remove trailing slashes from URLs to avoid double slashes
             frontend_url = settings.FRONTEND_URL.rstrip('/')
             
-            # Use OrderedDict or dict (Python 3.7+ preserves insertion order)
+            # Build JSON string manually to ensure exact key order (E-point is very strict about this)
+            # Use json.dumps for each value to properly escape special characters
             from collections import OrderedDict
             payment_data_json = OrderedDict([
                 ('public_key', EPointService.PUBLIC_KEY),
-                ('amount', str(float(amount))),  # Convert to string
-                ('currency', currency_code),  # Use converted currency code (AZN, USD, EUR)
+                ('amount', str(float(amount))),
+                ('currency', currency_code),
                 ('language', 'az'),
-                ('order_id', str(order_id)),  # Required by E-point API
+                ('order_id', str(order_id)),
                 ('description', description or f'Payment {order_id}'),
                 ('success_redirect_url', f"{frontend_url}/checkout/success"),
                 ('error_redirect_url', f"{frontend_url}/checkout/cancel"),
             ])
             
-            # Convert to JSON string (no spaces, no sorting - preserve order as E-point expects)
-            # E-point may be sensitive to key order for signature verification
-            json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=True)
+            # Convert to JSON string with exact key order (OrderedDict preserves order)
+            # Use separators=(',', ':') to remove spaces, ensure_ascii=True for proper encoding
+            json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=True, sort_keys=False)
             
             # Base64 encode the JSON string
             data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')

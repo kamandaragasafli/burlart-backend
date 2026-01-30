@@ -15,8 +15,15 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-this-in-produc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-# Allowed hosts (from .env, no defaults)
-ALLOWED_HOSTS = [host.strip() for host in config('ALLOWED_HOSTS').split(',')]
+# Allowed hosts (from .env, with default)
+# Include common IP addresses that might access the server
+ALLOWED_HOSTS_STR = config('ALLOWED_HOSTS', default='localhost,127.0.0.1')
+ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',')]
+# Add common server IPs if not already present
+common_ips = ['157.230.122.202', '142.93.174.39']
+for ip in common_ips:
+    if ip not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(ip)
 
 # FAL AI API Configuration
 FAL_KEY = config('FAL_KEY', default='')
