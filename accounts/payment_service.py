@@ -96,17 +96,23 @@ class EPointService:
                 }
             
             # Prepare payment data for E-point (JSON format)
-            # Note: Parameter names must match E-point documentation exactly
-            payment_data_json = {
-                'public_key': EPointService.PUBLIC_KEY,
-                'order_id': str(order_id),  # Required by E-point API
-                'amount': str(float(amount)),  # Convert to string for consistency
-                'currency': currency_code,  # Use converted currency code (AZN, USD, EUR)
-                'description': description or f'Payment {order_id}',
-                'language': 'az',
-                'success_redirect_url': f"{settings.FRONTEND_URL}/checkout/success",
-                'error_redirect_url': f"{settings.FRONTEND_URL}/checkout/cancel",
-            }
+            # IMPORTANT: Key order matters for signature verification (as per E-point docs page 5)
+            # Order: public_key, amount, currency, language, order_id, description, success_redirect_url, error_redirect_url
+            # Remove trailing slashes from URLs to avoid double slashes
+            frontend_url = settings.FRONTEND_URL.rstrip('/')
+            
+            # Use OrderedDict or dict (Python 3.7+ preserves insertion order)
+            from collections import OrderedDict
+            payment_data_json = OrderedDict([
+                ('public_key', EPointService.PUBLIC_KEY),
+                ('amount', str(float(amount))),  # Convert to string
+                ('currency', currency_code),  # Use converted currency code (AZN, USD, EUR)
+                ('language', 'az'),
+                ('order_id', str(order_id)),  # Required by E-point API
+                ('description', description or f'Payment {order_id}'),
+                ('success_redirect_url', f"{frontend_url}/checkout/success"),
+                ('error_redirect_url', f"{frontend_url}/checkout/cancel"),
+            ])
             
             # Convert to JSON string (no spaces, no sorting - preserve order as E-point expects)
             # E-point may be sensitive to key order for signature verification
