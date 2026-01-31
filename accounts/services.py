@@ -93,17 +93,132 @@ IMAGE_TOOL_CONFIG = {
         'model': 'fal-ai/qwen-image-2512',
         'name': 'Qwen',
     },
+    'gpt-image-edit': {
+        'credits': 16,
+        'model': 'fal-ai/gpt-image-1.5/edit',
+        'name': 'GPT Image Edit',
+    },
+    'nano-banana-edit': {
+        'credits': 47,
+        'model': 'fal-ai/nano-banana/edit',
+        'name': 'Nano Banana Edit',
+    },
+    'seedream-edit': {
+        'credits': 7,
+        'model': 'fal-ai/bytedance/seedream/v4.5/edit',
+        'name': 'Seedream Edit',
+    },
+    'flux-edit': {
+        'credits': 6,
+        'model': 'fal-ai/flux-2-pro/edit',
+        'name': 'Flux Edit',
+    },
+    'qwen-max-edit': {
+        'credits': 6,
+        'model': 'fal-ai/qwen-image-max/edit',
+        'name': 'Qwen Max Edit',
+    },
+}
+
+# ============================================================================
+# LOCKED PRICING - Image-to-Video tool configuration with credits and model IDs
+# ============================================================================
+IMAGE_TO_VIDEO_TOOL_CONFIG = {
+    'sora-i2v': {
+        'credits': 79,
+        'model': 'fal-ai/sora-2/image-to-video',
+        'name': 'Sora (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'veo-i2v': {
+        'credits': 238,
+        'model': 'fal-ai/veo3/image-to-video',
+        'name': 'Veo (Image-to-Video)',
+        'has_sound': True,
+        'requires_image': True
+    },
+    'kling-i2v': {
+        'credits': 55,
+        'model': 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+        'name': 'Kling AI (Image-to-Video)',
+        'has_sound': True,
+        'requires_image': True
+    },
+    'luma-i2v': {
+        'credits': 32,
+        'model': 'fal-ai/luma-photon/image-to-video',
+        'name': 'Luma Photon (Image-to-Video)',
+        'has_sound': True,
+        'requires_image': True
+    },
+    'seedance-i2v': {
+        'credits': 98,
+        'model': 'fal-ai/bytedance/seedance/v1/pro/fast/image-to-video',
+        'name': 'Seedance (Image-to-Video)',
+        'has_sound': True,
+        'requires_image': True
+    },
+    'pika-i2v': {
+        'credits': 71,
+        'model': 'fal-ai/pika/v2.2/image-to-video',
+        'name': 'Pika Labs (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'gpt-image-i2v': {
+        'credits': 16,
+        'model': 'fal-ai/gpt-image-1.5/image-to-video',
+        'name': 'GPT Image (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'nano-banana-i2v': {
+        'credits': 47,
+        'model': 'fal-ai/nano-banana-pro/image-to-video',
+        'name': 'Nano Banana (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'seedream-i2v': {
+        'credits': 6,
+        'model': 'fal-ai/seedream/v4.5/image-to-video',
+        'name': 'Seedream (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'flux-i2v': {
+        'credits': 6,
+        'model': 'fal-ai/flux-2-pro/image-to-video',
+        'name': 'Flux (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'z-image-i2v': {
+        'credits': 2,
+        'model': 'fal-ai/z-image/turbo/lora/image-to-video',
+        'name': 'Z-Image (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
+    'qwen-i2v': {
+        'credits': 6,
+        'model': 'fal-ai/qwen-image-2512/image-to-video',
+        'name': 'Qwen (Image-to-Video)',
+        'has_sound': False,
+        'requires_image': True
+    },
 }
 
 # Combined tool config for backward compatibility
-TOOL_CONFIG = {**VIDEO_TOOL_CONFIG, **IMAGE_TOOL_CONFIG}
+TOOL_CONFIG = {**VIDEO_TOOL_CONFIG, **IMAGE_TOOL_CONFIG, **IMAGE_TO_VIDEO_TOOL_CONFIG}
 
 # Validate locked prices after all configs are defined
 def _validate_locked_prices():
     """Internal function to validate locked prices"""
     from .constants import validate_locked_prices
     try:
-        validate_locked_prices(VIDEO_TOOL_CONFIG, IMAGE_TOOL_CONFIG)
+        validate_locked_prices(VIDEO_TOOL_CONFIG, IMAGE_TOOL_CONFIG, IMAGE_TO_VIDEO_TOOL_CONFIG)
         logger.info("Locked pricing validation passed")
     except ValueError as e:
         logger.error(f"LOCKED PRICING VALIDATION FAILED: {e}")
@@ -116,8 +231,13 @@ _validate_locked_prices()
 class VideoGenerationService:
     @staticmethod
     def get_tool_config(tool_name):
-        """Get tool configuration by tool name"""
-        return VIDEO_TOOL_CONFIG.get(tool_name)
+        """Get tool configuration by tool name - supports both text-to-video and image-to-video"""
+        # Check text-to-video first
+        config = VIDEO_TOOL_CONFIG.get(tool_name)
+        if config:
+            return config
+        # Check image-to-video
+        return IMAGE_TO_VIDEO_TOOL_CONFIG.get(tool_name)
     
     @staticmethod
     def create_video_generation(user, prompt, tool, options=None):
@@ -194,6 +314,11 @@ class VideoGenerationService:
             arguments = {
                 "prompt": prompt
             }
+            
+            # Add reference image if provided (for image-to-video models)
+            if options.get('referenceImage'):
+                arguments['image_url'] = options['referenceImage']
+                logger.info(f"Adding reference image for image-to-video: {options['referenceImage'][:100]}...")
             
             # Add negative prompt if provided
             if options.get('negativePrompt'):
@@ -583,10 +708,34 @@ class SubscriptionService:
     
     @staticmethod
     def cancel_subscription(user, subscription_id=None):
-        """Cancel user's subscription"""
+        """Cancel user's subscription, reset credits, and cancel top-ups"""
+        from .models import CreditPurchase, CreditHold
+        
         try:
             subscription = user.subscription
             subscription.cancel()
+            
+            # Reset user credits to 0
+            user.credits = 0
+            user.save()
+            logger.info(f"User credits reset to 0 - User: {user.email}")
+            
+            # Cancel all pending top-up purchases
+            pending_topups = CreditPurchase.objects.filter(
+                user=user,
+                status__in=['pending', 'processing']
+            )
+            cancelled_count = pending_topups.update(status='cancelled')
+            logger.info(f"Cancelled {cancelled_count} pending top-up purchases - User: {user.email}")
+            
+            # Release all held credits
+            held_credits = CreditHold.objects.filter(
+                user=user,
+                status='hold'
+            )
+            held_count = held_credits.update(status='released')
+            logger.info(f"Released {held_count} held credits - User: {user.email}")
+            
             logger.info(f"Subscription cancelled - User: {user.email}, Subscription ID: {subscription.id}")
             return subscription
         except Subscription.DoesNotExist:

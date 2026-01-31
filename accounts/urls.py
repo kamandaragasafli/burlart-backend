@@ -6,6 +6,7 @@ from .views import (
     GoogleLoginView,
     UserProfileView,
     UserUpdateProfileView,
+    UserDeleteAccountView,
     VideoGenerationCreateView,
     VideoGenerationListView,
     VideoGenerationDetailView,
@@ -37,6 +38,7 @@ urlpatterns = [
     # User endpoints
     path('profile/', UserProfileView.as_view(), name='profile'),
     path('profile/update/', UserUpdateProfileView.as_view(), name='profile-update'),
+    path('profile/delete/', UserDeleteAccountView.as_view(), name='profile-delete'),
     
     # Video generation endpoints
     path('videos/generate/', VideoGenerationCreateView.as_view(), name='video-generate'),

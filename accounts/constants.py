@@ -27,6 +27,21 @@ IMAGE_MODEL_CREDITS = {
     'flux': 6,            # Flux 2 Pro (orta)     - 6 token
     'z-image': 2,         # Z-Image (Turbo)       - 2 token
     'qwen': 6,            # Qwen Image 2512       - 6 token
+    'gpt-image-edit': 16,      # GPT Image 1.5 Edit - 16 token
+    'nano-banana-edit': 47,    # Nano Banana Edit - 47 token
+    'seedream-edit': 7,        # Seedream v4.5 Edit - 7 token
+    'flux-edit': 6,            # Flux 2 Pro Edit - 6 token
+    'qwen-max-edit': 6,        # Qwen Image Max Edit - 6 token
+}
+
+# Image-to-Video model pricing (LOCKED - 5 seconds video)
+IMAGE_TO_VIDEO_MODEL_CREDITS = {
+    'sora-i2v': 79,       # Sora-2 - 79 token
+    'veo-i2v': 238,       # Veo 3.1 (orta) - 238 token
+    'kling-i2v': 55,      # Kling v2.5 Turbo Pro - 55 token
+    'luma-i2v': 32,       # Luma Ray-2 Flash - 32 token
+    'seedance-i2v': 98,   # Seedance v1 Pro (1080p) - 98 token
+    'pika-i2v': 71,       # Pika v2.2 (1080p) - 71 token
 }
 
 # ============================================================================
@@ -91,7 +106,7 @@ SUBSCRIPTION_PLANS = {
 
 # Validation function to ensure prices match constants
 # Note: This function is called from services.py after all imports are complete
-def validate_locked_prices(video_config, image_config):
+def validate_locked_prices(video_config, image_config, image_to_video_config=None):
     """
     Validates that service config prices match locked constants.
     This ensures prices cannot be changed accidentally.
@@ -99,6 +114,7 @@ def validate_locked_prices(video_config, image_config):
     Args:
         video_config: VIDEO_TOOL_CONFIG from services.py
         image_config: IMAGE_TOOL_CONFIG from services.py
+        image_to_video_config: IMAGE_TO_VIDEO_TOOL_CONFIG from services.py (optional)
     """
     errors = []
     
@@ -119,6 +135,16 @@ def validate_locked_prices(video_config, image_config):
                     f"Image model '{tool_id}': Config has {image_config[tool_id]['credits']} "
                     f"but locked price is {credits}"
                 )
+    
+    # Validate image-to-video prices
+    if image_to_video_config:
+        for tool_id, credits in IMAGE_TO_VIDEO_MODEL_CREDITS.items():
+            if tool_id in image_to_video_config:
+                if image_to_video_config[tool_id]['credits'] != credits:
+                    errors.append(
+                        f"Image-to-Video model '{tool_id}': Config has {image_to_video_config[tool_id]['credits']} "
+                        f"but locked price is {credits}"
+                    )
     
     if errors:
         raise ValueError(

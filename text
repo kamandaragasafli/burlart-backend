@@ -18,6 +18,20 @@
 •Z-Image → 18 kredit "fal-ai/z-image/turbo/lora"
 •Qwen → 16 kredit "fal-ai/qwen-image-2512"
 
+fal-ai/sora-2/image-to-video
+fal-ai/veo3.1/fast/first-last-frame-to-video
+fal-ai/kling-video/v2.5-turbo/pro/image-to-video
+fal-ai/luma-dream-machine/ray-2-flash/image-to-video
+fal-ai/bytedance/seedance/v1/pro/image-to-video
+fal-ai/pika/v2.2/image-to-video
+
+
+fal-ai/gpt-image-1.5/edit
+fal-ai/nano-banana/edit
+fal-ai/bytedance/seedream/v4.5/edit
+fal-ai/flux-2-pro/edit
+fal-ai/qwen-image-max/edit
+
 
 
 
@@ -356,3 +370,17 @@ Image modelləri (1 şəkil üçün satış tokeni)
 - Flux 2 Pro (orta): 6 token
 - Qwen Image 2512: 6 token
 - Z‑Image (Turbo): 2 token
+
+
+fal-ai/sora-2/image-to-video
+fal-ai/veo3/image-to-video
+fal-ai/kling-video/v2.5-turbo/pro/image-to-video
+fal-ai/luma-photon/image-to-video
+fal-ai/bytedance/seedance/v1/pro/fast/image-to-video
+fal-ai/pika/v2.2/image-to-video
+fal-ai/gpt-image-1.5/image-to-video
+fal-ai/nano-banana-pro/image-to-video
+fal-ai/seedream/v4.5/image-to-video
+fal-ai/flux-2-pro/image-to-video
+fal-ai/z-image/turbo/lora/image-to-video
+fal-ai/qwen-image-2512/image-to-video

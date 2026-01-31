@@ -84,6 +84,19 @@ class VideoGeneration(models.Model):
         ('kling', 'Kling AI'),
         ('veo', 'Veo'),
         ('sora', 'Sora'),
+        # Image-to-Video models
+        ('sora-i2v', 'Sora (Image-to-Video)'),
+        ('veo-i2v', 'Veo (Image-to-Video)'),
+        ('kling-i2v', 'Kling AI (Image-to-Video)'),
+        ('luma-i2v', 'Luma Photon (Image-to-Video)'),
+        ('seedance-i2v', 'Seedance (Image-to-Video)'),
+        ('pika-i2v', 'Pika Labs (Image-to-Video)'),
+        ('gpt-image-i2v', 'GPT Image (Image-to-Video)'),
+        ('nano-banana-i2v', 'Nano Banana (Image-to-Video)'),
+        ('seedream-i2v', 'Seedream (Image-to-Video)'),
+        ('flux-i2v', 'Flux (Image-to-Video)'),
+        ('z-image-i2v', 'Z-Image (Image-to-Video)'),
+        ('qwen-i2v', 'Qwen (Image-to-Video)'),
     ]
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='videos')
@@ -199,6 +212,7 @@ class Subscription(models.Model):
     def activate(self):
         """Activate subscription and set billing period"""
         from datetime import timedelta
+        from .subscription_constants import SUBSCRIPTION_PLANS
         
         self.status = 'active'
         now = timezone.now()
@@ -206,6 +220,17 @@ class Subscription(models.Model):
         self.period_end = now + timedelta(days=30)
         self.next_renewal_date = self.period_end  # Keep for backward compatibility
         self.save()
+        
+        # Grant initial credits if subscription is being activated for the first time
+        # (only if user doesn't already have credits from subscription creation)
+        plan_config = SUBSCRIPTION_PLANS.get(self.plan)
+        if plan_config:
+            monthly_credits = plan_config['credits']
+            # Only set credits if user has 0 credits (first time activation)
+            # or if credits are less than monthly amount (to ensure they get full amount)
+            if self.user.credits == 0 or self.user.credits < monthly_credits:
+                self.user.credits = monthly_credits
+                self.user.save()
     
     def renew(self):
         """

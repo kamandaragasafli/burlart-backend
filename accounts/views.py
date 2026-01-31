@@ -208,6 +208,32 @@ class UserUpdateProfileView(generics.UpdateAPIView):
         return self.request.user
 
 
+class UserDeleteAccountView(APIView):
+    """Delete user account"""
+    permission_classes = [IsAuthenticated]
+    
+    def delete(self, request):
+        try:
+            user = request.user
+            user_email = user.email
+            
+            # Delete user (this will cascade delete related objects)
+            user.delete()
+            
+            logger.info(f"User account deleted: {user_email}")
+            
+            return Response({
+                'message': 'Account deleted successfully'
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            logger.error(f"Account deletion failed: {str(e)}", exc_info=True)
+            return Response(
+                {'error': 'Account deletion failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class VideoGenerationCreateView(APIView):
     permission_classes = [IsAuthenticated]
     
