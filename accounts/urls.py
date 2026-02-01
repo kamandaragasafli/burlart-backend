@@ -26,6 +26,7 @@ from .views import (
     PaymentSuccessView,
     PaymentErrorView,
     PaymentWebhookView,
+    PaymentCompleteView,
 )
 
 urlpatterns = [
@@ -73,4 +74,5 @@ urlpatterns = [
     path('payment/error/', PaymentErrorView.as_view(), name='payment-error'),
     path('payment/result/', PaymentWebhookView.as_view(), name='payment-result'),  # EPOINT callback endpoint
     path('payment/webhook/', PaymentWebhookView.as_view(), name='payment-webhook'),  # Alias for backward compatibility
+    path('payment/complete/', PaymentCompleteView.as_view(), name='payment-complete'),  # Manual payment completion
 ]

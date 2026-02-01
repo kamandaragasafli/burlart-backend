@@ -296,6 +296,7 @@ class EPointService:
                     'success': True,
                     'status': result.get('status'),  # e.g., 'completed', 'pending', 'failed'
                     'transaction_id': transaction_id,
+                    'order_id': result.get('order_id'),  # Include order_id if available
                     'message': 'Status retrieved successfully',
                 }
             else:

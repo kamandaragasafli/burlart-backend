@@ -866,6 +866,110 @@ class PaymentErrorView(APIView):
         return redirect(frontend_url)
 
 
+class PaymentCompleteView(APIView):
+    """Manually complete payment by transaction_id (for frontend use when webhook fails)"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Complete payment using transaction_id from EPOINT"""
+        from .payment_service import PaymentService, EPointService
+        from .models import Payment
+        
+        transaction_id = request.data.get('transaction_id')
+        
+        if not transaction_id:
+            return Response(
+                {'error': 'transaction_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Find payment by EPOINT transaction ID
+            # First try to find by epoint_transaction_id
+            payment = None
+            try:
+                payment = Payment.objects.get(epoint_transaction_id=transaction_id)
+            except Payment.DoesNotExist:
+                # If not found, check EPOINT status to get order_id
+                # EPOINT status check will return order_id in the response
+                epoint_status = EPointService.check_payment_status(transaction_id)
+                if epoint_status.get('success') and epoint_status.get('order_id'):
+                    order_id = epoint_status.get('order_id')
+                    try:
+                        payment = Payment.objects.get(id=order_id)
+                        # Update payment with transaction_id if not set
+                        if not payment.epoint_transaction_id:
+                            payment.epoint_transaction_id = transaction_id
+                            payment.save()
+                    except Payment.DoesNotExist:
+                        pass
+            
+            if not payment:
+                logger.error(f"Payment not found - Transaction ID: {transaction_id}")
+                return Response(
+                    {'error': 'Payment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Verify payment belongs to current user
+            if payment.user != request.user:
+                return Response(
+                    {'error': 'Payment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # If already completed, return success
+            if payment.status == 'completed':
+                logger.info(f"Payment already completed - Payment ID: {payment.id}, Transaction: {transaction_id}")
+                return Response({
+                    'success': True,
+                    'message': 'Payment already completed',
+                    'payment_id': payment.id,
+                    'payment_type': payment.payment_type,
+                })
+            
+            # Check EPOINT payment status
+            epoint_status = EPointService.check_payment_status(transaction_id)
+            
+            if epoint_status.get('status') == 'completed' or epoint_status.get('success'):
+                # Complete the payment
+                PaymentService.complete_payment(payment.id, transaction_id)
+                
+                # Refresh payment from DB
+                payment.refresh_from_db()
+                
+                logger.info(f"Payment completed manually - Payment ID: {payment.id}, Transaction: {transaction_id}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Payment completed successfully',
+                    'payment_id': payment.id,
+                    'payment_type': payment.payment_type,
+                    'status': payment.status,
+                })
+            else:
+                # Payment not completed in EPOINT
+                logger.warning(f"Payment not completed in EPOINT - Transaction: {transaction_id}, Status: {epoint_status.get('status')}")
+                return Response({
+                    'success': False,
+                    'message': f"Payment not completed in EPOINT. Status: {epoint_status.get('status')}",
+                    'epoint_status': epoint_status.get('status'),
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Payment.DoesNotExist:
+            logger.error(f"Payment not found - Transaction ID: {transaction_id}")
+            return Response(
+                {'error': 'Payment not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Payment completion error: {str(e)}", exc_info=True)
+            return Response(
+                {'error': f'Payment completion failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class PaymentWebhookView(APIView):
     """Handle E-point webhook notifications (result callback)
     
