@@ -867,7 +867,13 @@ class PaymentErrorView(APIView):
 
 
 class PaymentWebhookView(APIView):
-    """Handle E-point webhook notifications (result callback)"""
+    """Handle E-point webhook notifications (result callback)
+    
+    IMPORTANT: This endpoint is called by EPOINT server and must:
+    1. Be CSRF-exempt (AllowAny permission)
+    2. Return 200 quickly to prevent retries
+    3. Verify signature before processing
+    """
     permission_classes = [AllowAny]
     
     def post(self, request):
@@ -891,9 +897,10 @@ class PaymentWebhookView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            logger.info(f"Payment webhook received - Data length: {len(data_encoded)}, Signature: {signature_received[:20]}...")
+            logger.info(f"Payment webhook received - Data length: {len(data_encoded)}, Signature length: {len(signature_received) if signature_received else 0}")
             
             # Process webhook (verify signature and decode data)
+            # This includes constant-time signature comparison to prevent timing attacks
             result = EPointService.process_webhook(data_encoded, signature_received)
             
             if not result.get('success'):
@@ -939,19 +946,25 @@ class PaymentWebhookView(APIView):
             if payment_status == 'success':
                 PaymentService.complete_payment(payment.id, transaction_id)
                 logger.info(f"Payment completed via webhook - Payment ID: {payment.id}")
+                
+                # Return 200 immediately to prevent EPOINT retries
+                return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+                
             elif payment_status in ['failed', 'error']:
                 payment.status = 'failed'
                 payment.notes = f"Payment {payment_status} via E-point - {webhook_data.get('message', '')}"
                 payment.save()
                 logger.warning(f"Payment failed via webhook - Payment ID: {payment.id}")
+                
+                # Return 200 even for failed payments (we processed the webhook successfully)
+                return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+                
             else:
                 # Other statuses: new, returned, server_error
                 logger.info(f"Payment status update via webhook - Payment ID: {payment.id}, Status: {payment_status}")
-            
-            return Response({
-                'success': True,
-                'message': 'Webhook processed',
-            })
+                
+                # Return 200 to acknowledge receipt
+                return Response({'status': 'ok'}, status=status.HTTP_200_OK)
             
         except Exception as e:
             logger.error(f"Webhook processing error: {str(e)}", exc_info=True)

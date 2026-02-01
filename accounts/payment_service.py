@@ -6,7 +6,8 @@ import requests
 import json
 import base64
 import hashlib
-from decimal import Decimal
+import hmac
+from decimal import Decimal, ROUND_HALF_UP
 from django.utils import timezone
 from django.conf import settings
 from .models import Payment, Subscription, CreditPurchase
@@ -107,11 +108,22 @@ class EPointService:
             frontend_url = settings.FRONTEND_URL.rstrip('/')
             
             # Build JSON string with exact key order as per E-point documentation
-            # Order based on doc example: public_key, amount, currency, language, description, order_id, success_redirect_url, error_redirect_url
+            # Order based on doc example: public_key, amount, currency, language, description, order_id
+            # NOTE: Redirect URLs removed - EPOINT panel settings will be used instead
+            # If redirect URLs are needed, they must match panel settings exactly:
+            # success_url: /payment/success
+            # error_url: /payment/error
+            # result_url: /payment/result
             from collections import OrderedDict
+            
+            # Format amount with fixed 2 decimal places (canonical format)
+            # Use Decimal to avoid float precision issues
+            amount_decimal = Decimal(str(amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            amount_str = format(amount_decimal, 'f')  # Always "0.10", "10.00", etc.
+            
             payment_data_json = OrderedDict([
                 ('public_key', EPointService.PUBLIC_KEY),
-                ('amount', str(float(amount))),
+                ('amount', amount_str),
                 ('currency', currency_code),
                 ('language', 'az'),
             ])
@@ -121,12 +133,15 @@ class EPointService:
                 payment_data_json['description'] = description
             
             payment_data_json['order_id'] = str(order_id)
-            payment_data_json['success_redirect_url'] = f"{frontend_url}/checkout/success"
-            payment_data_json['error_redirect_url'] = f"{frontend_url}/checkout/cancel"
+            
+            # Redirect URLs removed - EPOINT panel default URLs will be used
+            # If you need custom redirects, uncomment and ensure they match panel settings:
+            # payment_data_json['success_redirect_url'] = f"{frontend_url}/payment/success"
+            # payment_data_json['error_redirect_url'] = f"{frontend_url}/payment/error"
             
             # Convert to JSON string with exact key order (OrderedDict preserves order)
-            # Use separators=(',', ':') to remove spaces, ensure_ascii=True for proper encoding
-            json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=True, sort_keys=False)
+            # Use separators=(',', ':') to remove spaces, ensure_ascii=False (UTF-8 encoding)
+            json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=False, sort_keys=False)
             
             # Base64 encode the JSON string
             data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
@@ -134,21 +149,12 @@ class EPointService:
             # Generate signature: base64_encode(sha1(private_key + data + private_key))
             signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
             
-            # Debug logging for signature verification
+            # Debug logging for signature verification (SECRET_KEY masked for security)
             logger.info(f"EPOINT: JSON string: {json_string}")
-            logger.info(f"EPOINT: Data encoded: {data_encoded}")
+            logger.info(f"EPOINT: Data encoded: {data_encoded[:100]}...")
             logger.info(f"EPOINT: SECRET_KEY length: {len(EPointService.SECRET_KEY) if EPointService.SECRET_KEY else 0}")
-            logger.info(f"EPOINT: SECRET_KEY (full): {EPointService.SECRET_KEY}")
-            logger.info(f"EPOINT: Signature: {signature}")
-            
-            # Verify signature generation manually for debugging
-            hash_string = EPointService.SECRET_KEY + data_encoded + EPointService.SECRET_KEY
-            logger.info(f"EPOINT: Hash string (first 50 chars): {hash_string[:50]}...")
-            sha1_hash = hashlib.sha1(hash_string.encode('utf-8')).digest()
-            manual_signature = base64.b64encode(sha1_hash).decode('utf-8')
-            logger.info(f"EPOINT: Manual signature check: {manual_signature}")
-            if signature != manual_signature:
-                logger.error(f"EPOINT: Signature mismatch in generation! Expected: {manual_signature}, Got: {signature}")
+            logger.info(f"EPOINT: SECRET_KEY (masked): {'*' * min(len(EPointService.SECRET_KEY) if EPointService.SECRET_KEY else 0, 20)}...")
+            logger.info(f"EPOINT: Signature: {signature[:50]}...")
             
             # Prepare POST request payload
             request_payload = {
@@ -260,7 +266,7 @@ class EPointService:
             }
             
             # Convert to JSON string
-            json_string = json.dumps(status_data_json, separators=(',', ':'))
+            json_string = json.dumps(status_data_json, separators=(',', ':'), ensure_ascii=False, sort_keys=False)
             
             # Base64 encode the JSON string
             data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
@@ -349,10 +355,11 @@ class EPointService:
             # Generate signature: base64_encode(sha1(private_key + data + private_key))
             expected_signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
             
-            if expected_signature != signature_received:
+            # Use constant-time comparison to prevent timing attacks
+            if not hmac.compare_digest(expected_signature, signature_received or ""):
                 logger.error(f"EPOINT: Webhook signature verification failed")
-                logger.error(f"EPOINT: Expected: {expected_signature[:50]}...")
-                logger.error(f"EPOINT: Received: {signature_received[:50]}...")
+                logger.error(f"EPOINT: Expected signature length: {len(expected_signature)}")
+                logger.error(f"EPOINT: Received signature length: {len(signature_received) if signature_received else 0}")
                 return {
                     'success': False,
                     'message': 'Signature verification failed - webhook may be tampered',
@@ -433,7 +440,7 @@ class PaymentService:
         
         # Create E-point payment request
         epoint_result = EPointService.create_payment(
-            amount=float(payment.amount),
+            amount=str(payment.amount),  # Pass as string to avoid float precision issues
             currency=payment.currency,
             description=f"{payment.payment_type} payment",
             user=payment.user,

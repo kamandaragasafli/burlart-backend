@@ -71,5 +71,6 @@ urlpatterns = [
     # E-point Payment Callbacks
     path('payment/success/', PaymentSuccessView.as_view(), name='payment-success'),
     path('payment/error/', PaymentErrorView.as_view(), name='payment-error'),
-    path('payment/webhook/', PaymentWebhookView.as_view(), name='payment-webhook'),
+    path('payment/result/', PaymentWebhookView.as_view(), name='payment-result'),  # EPOINT callback endpoint
+    path('payment/webhook/', PaymentWebhookView.as_view(), name='payment-webhook'),  # Alias for backward compatibility
 ]
