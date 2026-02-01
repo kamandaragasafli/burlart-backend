@@ -38,8 +38,8 @@ GOOGLE_CLIENT_ID = config(
 # E-point Payment Gateway Configuration
 EPOINT_TEST_MODE = config('EPOINT_TEST_MODE', default=True, cast=bool)
 EPOINT_API_URL = config('EPOINT_API_URL', default='https://epoint.az/api/1')
-EPOINT_PUBLIC_KEY = config('EPOINT_PUBLIC_KEY', default='')
-EPOINT_SECRET_KEY = config('EPOINT_SECRET_KEY', default='')
+EPOINT_PUBLIC_KEY = config('EPOINT_PUBLIC_KEY', default='').strip()
+EPOINT_SECRET_KEY = config('EPOINT_SECRET_KEY', default='').strip()
 
 # Frontend URL for redirects (user-facing pages)
 FRONTEND_URL = config('FRONTEND_URL', default='https://burlart.az')
