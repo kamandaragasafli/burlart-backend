@@ -35,8 +35,10 @@ class Command(BaseCommand):
         self.stdout.write(f'   Private key length: {len(secret_key)} chars')
         self.stdout.write('')
         
-        # Şəkildə görünən key ilə müqayisə
-        expected_key = 'S0WXEqciyVMOOilbHNuvXuV9'
+        # EPOINT panel-dəki key (istifadəçi tərəfindən təyin edilir)
+        # Şəkildə görünən key: S0WXEqciyVMOOilbHNuvXuV9
+        # Amma istifadəçi deyir ki, panel-də: S0WXEqciyVMOOi1bHNuvXuV9
+        expected_key = 'S0WXEqciyVMOOi1bHNuvXuV9'  # Panel-dəki key (14-cü simvol: 1)
         self.stdout.write('📋 Şəkildə görünən key:')
         self.stdout.write(f'   {expected_key}')
         self.stdout.write(f'   Length: {len(expected_key)} chars')
