@@ -34,8 +34,8 @@ class EPointService:
         # Create SHA1 hash: private_key + data + private_key
         hash_string = private_key + data + private_key
         sha1_hash = hashlib.sha1(hash_string.encode('utf-8')).digest()
-        # Base64 encode the hash
-        signature = base64.b64encode(sha1_hash).decode('utf-8')
+        # Base64 encode the hash (Base64 həmişə ASCII-dir, amma decode('utf-8') də işləyir)
+        signature = base64.b64encode(sha1_hash).decode('ascii')
         return signature
     
     @staticmethod
@@ -143,8 +143,8 @@ class EPointService:
             # Use separators=(',', ':') to remove spaces, ensure_ascii=False (UTF-8 encoding)
             json_string = json.dumps(payment_data_json, separators=(',', ':'), ensure_ascii=False, sort_keys=False)
             
-            # Base64 encode the JSON string
-            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
+            # Base64 encode the JSON string (Base64 həmişə ASCII-dir)
+            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('ascii')
             
             # Generate signature: base64_encode(sha1(private_key + data + private_key))
             signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
@@ -268,8 +268,8 @@ class EPointService:
             # Convert to JSON string
             json_string = json.dumps(status_data_json, separators=(',', ':'), ensure_ascii=False, sort_keys=False)
             
-            # Base64 encode the JSON string
-            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
+            # Base64 encode the JSON string (Base64 həmişə ASCII-dir)
+            data_encoded = base64.b64encode(json_string.encode('utf-8')).decode('ascii')
             
             # Generate signature
             signature = EPointService._generate_signature(data_encoded, EPointService.SECRET_KEY)
