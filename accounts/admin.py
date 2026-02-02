@@ -210,78 +210,77 @@ class PaymentAdmin(admin.ModelAdmin):
             topups=Count('id', filter=Q(payment_type='topup')),
         )
         
-        # Get FAL AI account balance using SDK
+        # Get FAL AI account balance using REST API
         fal_balance = None
         fal_error = None
         try:
             if hasattr(settings, 'FAL_KEY') and settings.FAL_KEY:
-                try:
-                    # Use FAL AI SDK to get account balance
-                    account_info = fal_client.account()
-                    logger.info(f"FAL AI account info: {account_info}")
-                    
-                    # Try different possible keys for balance
-                    fal_balance = (
-                        account_info.get('balance') or 
-                        account_info.get('credits') or 
-                        account_info.get('credit_balance') or
-                        account_info.get('account_balance') or
-                        account_info.get('available_credits') or
-                        account_info.get('remaining_credits') or
-                        account_info.get('credits_balance')
-                    )
-                    
-                    # If still None, try to get from nested structure
-                    if fal_balance is None and isinstance(account_info, dict):
-                        # Check nested structures
-                        if 'account' in account_info:
-                            account_data = account_info['account']
-                            fal_balance = (
-                                account_data.get('balance') or 
-                                account_data.get('credits') or
-                                account_data.get('credit_balance')
-                            )
-                        if 'user' in account_info:
-                            user_data = account_info['user']
-                            fal_balance = (
-                                user_data.get('balance') or 
-                                user_data.get('credits') or
-                                user_data.get('credit_balance')
-                            )
-                    
-                    if fal_balance is None:
-                        # Log the full response for debugging
-                        logger.warning(f"FAL AI account response structure: {account_info}")
-                        fal_error = "Balance not found in FAL AI response"
-                except Exception as sdk_error:
-                    logger.error(f"FAL AI SDK error: {str(sdk_error)}")
-                    # Fallback to REST API
+                import requests
+                headers = {
+                    'Authorization': f'Key {settings.FAL_KEY}',
+                    'Content-Type': 'application/json'
+                }
+                
+                # Try multiple FAL AI API endpoints for account balance
+                endpoints = [
+                    'https://fal.ai/api/v1/account',
+                    'https://fal.ai/api/v1/user',
+                    'https://fal.ai/api/v1/balance',
+                    'https://fal.ai/api/v1/credits',
+                ]
+                
+                for endpoint in endpoints:
                     try:
-                        import requests
-                        headers = {
-                            'Authorization': f'Key {settings.FAL_KEY}',
-                            'Content-Type': 'application/json'
-                        }
-                        response = requests.get(
-                            'https://fal.ai/api/v1/account',
-                            headers=headers,
-                            timeout=10
-                        )
+                        logger.debug(f"Trying FAL AI endpoint: {endpoint}")
+                        response = requests.get(endpoint, headers=headers, timeout=10)
+                        
                         if response.status_code == 200:
                             account_data = response.json()
+                            logger.debug(f"FAL AI response from {endpoint}: {account_data}")
+                            
+                            # Try different possible keys for balance
                             fal_balance = (
                                 account_data.get('balance') or 
                                 account_data.get('credits') or 
                                 account_data.get('credit_balance') or
-                                account_data.get('account_balance')
+                                account_data.get('account_balance') or
+                                account_data.get('available_credits') or
+                                account_data.get('remaining_credits') or
+                                account_data.get('credits_balance')
                             )
-                            if fal_balance is None:
-                                fal_error = f"Balance not found. Response: {account_data}"
+                            
+                            # If still None, try nested structures
+                            if fal_balance is None and isinstance(account_data, dict):
+                                if 'account' in account_data:
+                                    account_info = account_data['account']
+                                    fal_balance = (
+                                        account_info.get('balance') or 
+                                        account_info.get('credits') or
+                                        account_info.get('credit_balance')
+                                    )
+                                if fal_balance is None and 'user' in account_data:
+                                    user_info = account_data['user']
+                                    fal_balance = (
+                                        user_info.get('balance') or 
+                                        user_info.get('credits') or
+                                        user_info.get('credit_balance')
+                                    )
+                            
+                            if fal_balance is not None:
+                                logger.info(f"FAL AI balance retrieved: {fal_balance} from {endpoint}")
+                                break
+                        elif response.status_code == 401:
+                            logger.warning(f"FAL AI authentication failed for {endpoint}")
+                            fal_error = "FAL AI authentication failed - check API key"
+                            break
                         else:
-                            fal_error = f"API returned status {response.status_code}: {response.text[:200]}"
-                    except Exception as api_error:
-                        logger.error(f"FAL AI REST API error: {str(api_error)}")
-                        fal_error = f"SDK and REST API both failed: {str(api_error)}"
+                            logger.debug(f"FAL AI endpoint {endpoint} returned status {response.status_code}")
+                    except requests.exceptions.RequestException as e:
+                        logger.debug(f"FAL AI endpoint {endpoint} failed: {str(e)}")
+                        continue
+                
+                if fal_balance is None and not fal_error:
+                    fal_error = "Could not retrieve balance from FAL AI API - all endpoints failed"
             else:
                 fal_error = "FAL_KEY not configured in settings"
         except Exception as e:
