@@ -10,18 +10,6 @@ DO NOT MODIFY THESE VALUES WITHOUT OWNER APPROVAL.
 
 # Subscription plan configuration (LOCKED)
 SUBSCRIPTION_PLANS = {
-    'demo': {
-        'name': 'Demo',
-        'price': 0.10,  # ₼ (AZN) - Demo test paketi
-        'currency': '₼',
-        'credits': 500,
-        'period_days': 7,  # 7 gün demo
-        'features': [
-            'Bütün AI alətlərinə giriş',
-            '500 kredit / həftə',
-            'Demo paket',
-        ],
-    },
     'starter': {
         'name': 'Starter',
         'price': 19,  # ₼ (AZN)
