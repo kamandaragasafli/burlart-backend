@@ -7,6 +7,8 @@ from django.utils.html import format_html
 from django.conf import settings
 import fal_client
 import logging
+import requests
+import os
 
 logger = logging.getLogger(__name__)
 
