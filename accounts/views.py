@@ -838,11 +838,19 @@ class PaymentSuccessView(APIView):
         """User is redirected here after successful payment"""
         from django.shortcuts import redirect
         
-        transaction_id = request.GET.get('transaction_id')
-        logger.info(f"Payment success callback - Transaction ID: {transaction_id}")
+        # EPOINT sends 'transaction' parameter, not 'transaction_id'
+        transaction_id = request.GET.get('transaction') or request.GET.get('transaction_id')
+        logger.info(f"Payment success callback - Transaction: {transaction_id}, All params: {dict(request.GET)}")
         
-        # Redirect to frontend success page
-        # Frontend will poll or check payment status
+        if not transaction_id:
+            logger.error("Payment success callback - No transaction ID received")
+            # Redirect to frontend error page
+            from django.conf import settings
+            frontend_url = f"{settings.FRONTEND_URL}/checkout/cancel?error=No transaction ID"
+            return redirect(frontend_url)
+        
+        # Redirect to frontend success page with transaction_id
+        # Frontend will complete payment manually using this transaction_id
         from django.conf import settings
         frontend_url = f"{settings.FRONTEND_URL}/checkout/success?transaction_id={transaction_id}"
         return redirect(frontend_url)
@@ -931,7 +939,13 @@ class PaymentCompleteView(APIView):
             # Check EPOINT payment status
             epoint_status = EPointService.check_payment_status(transaction_id)
             
-            if epoint_status.get('status') == 'completed' or epoint_status.get('success'):
+            # EPOINT returns 'status': 'success' for completed payments
+            epoint_status_value = epoint_status.get('status')
+            is_completed = (epoint_status_value == 'completed' or 
+                           epoint_status_value == 'success' or 
+                           epoint_status.get('success') == True)
+            
+            if is_completed:
                 # Complete the payment
                 PaymentService.complete_payment(payment.id, transaction_id)
                 

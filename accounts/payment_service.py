@@ -491,7 +491,13 @@ class PaymentService:
                 payment.epoint_transaction_id or epoint_transaction_id
             )
         
-        if epoint_status.get('status') == 'completed':
+        # EPOINT returns 'status': 'success' for completed payments, not 'completed'
+        epoint_status_value = epoint_status.get('status')
+        is_completed = (epoint_status_value == 'completed' or 
+                       epoint_status_value == 'success' or 
+                       epoint_status.get('success') == True)
+        
+        if is_completed:
             # Complete the payment
             payment.status = 'completed'
             payment.completed_at = timezone.now()
@@ -511,7 +517,7 @@ class PaymentService:
             return payment
         else:
             payment.status = 'failed'
-            payment.notes = f"E-point status: {epoint_status.get('status')}"
+            payment.notes = f"E-point status: {epoint_status_value}"
             payment.save()
-            raise ValueError(f"Payment not completed by E-point: {epoint_status.get('status')}")
+            raise ValueError(f"Payment not completed by E-point: {epoint_status_value}")
 
