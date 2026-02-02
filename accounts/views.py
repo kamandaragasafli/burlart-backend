@@ -864,9 +864,12 @@ class PaymentErrorView(APIView):
         """User is redirected here after failed payment"""
         from django.shortcuts import redirect
         
-        transaction_id = request.GET.get('transaction_id')
+        # EPOINT sends 'transaction' parameter, not 'transaction_id'
+        transaction_id = request.GET.get('transaction') or request.GET.get('transaction_id')
         error = request.GET.get('error', 'Unknown error')
-        logger.warning(f"Payment error callback - Transaction ID: {transaction_id}, Error: {error}")
+        
+        # Log all parameters for debugging
+        logger.warning(f"Payment error callback - Transaction: {transaction_id}, Error: {error}, All params: {dict(request.GET)}")
         
         # Redirect to frontend error page
         from django.conf import settings
