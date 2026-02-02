@@ -4,18 +4,23 @@ from django.utils.html import format_html
 from .models import User, VideoGeneration, ImageGeneration, Subscription, CreditPurchase, Payment
 from django.db.models import Sum, Count, Q
 from django.utils.html import format_html
+from django.conf import settings
+import fal_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ['email', 'credits', 'language', 'theme', 'is_staff']
-    list_filter = ['is_staff', 'is_superuser', 'language', 'theme']
+    list_display = ['email', 'date_joined', 'subscription_plan_display', 'credits', 'is_staff']
+    list_filter = ['is_staff', 'is_superuser', 'date_joined']
     search_fields = ['email']
-    ordering = ['email']
+    ordering = ['-date_joined']  # Yeniləri birinci
     
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'credits', 'language', 'theme')}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'credits')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
@@ -23,9 +28,36 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'password1', 'password2', 'credits', 'language', 'theme'),
+            'fields': ('email', 'password1', 'password2', 'credits'),
         }),
     )
+    
+    def subscription_plan_display(self, obj):
+        """Display subscription plan name"""
+        try:
+            subscription = obj.subscription
+            if subscription and subscription.is_active():
+                from .subscription_constants import SUBSCRIPTION_PLANS
+                plan_config = SUBSCRIPTION_PLANS.get(subscription.plan, {})
+                plan_name = plan_config.get('name', subscription.plan.upper())
+                return format_html(
+                    '<span style="color: #51cf66; font-weight: bold;">{}</span>',
+                    plan_name
+                )
+            elif subscription:
+                # Subscription exists but not active
+                from .subscription_constants import SUBSCRIPTION_PLANS
+                plan_config = SUBSCRIPTION_PLANS.get(subscription.plan, {})
+                plan_name = plan_config.get('name', subscription.plan.upper())
+                return format_html(
+                    '<span style="color: #ffa500;">{} ({})</span>',
+                    plan_name,
+                    subscription.status
+                )
+        except:
+            pass
+        return format_html('<span style="color: #868e96;">Yoxdur</span>')
+    subscription_plan_display.short_description = 'Paket'
 
 
 @admin.register(VideoGeneration)
@@ -34,6 +66,7 @@ class VideoGenerationAdmin(admin.ModelAdmin):
     list_filter = ['status', 'tool', 'created_at']
     search_fields = ['user__email', 'prompt', 'fal_request_id']
     readonly_fields = ['created_at', 'updated_at', 'credits_used']  # Credits are locked
+    ordering = ['-created_at']  # Yeniləri birinci
     
     fieldsets = (
         ('User & Tool', {'fields': ('user', 'tool', 'model_id')}),
@@ -53,6 +86,7 @@ class ImageGenerationAdmin(admin.ModelAdmin):
     list_filter = ['status', 'tool', 'created_at']
     search_fields = ['user__email', 'prompt', 'fal_request_id']
     readonly_fields = ['created_at', 'updated_at', 'credits_used']  # Credits are locked
+    ordering = ['-created_at']  # Yeniləri birinci
     
     fieldsets = (
         ('User & Tool', {'fields': ('user', 'tool', 'model_id')}),
@@ -72,6 +106,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
     list_filter = ['status', 'plan', 'auto_renew', 'created_at']
     search_fields = ['user__email']
     readonly_fields = ['created_at', 'updated_at']
+    ordering = ['-created_at']  # Yeniləri birinci
     
     fieldsets = (
         ('User & Plan', {'fields': ('user', 'plan', 'status')}),
@@ -87,6 +122,7 @@ class CreditPurchaseAdmin(admin.ModelAdmin):
     list_filter = ['status', 'package', 'created_at']
     search_fields = ['user__email', 'payment_id']
     readonly_fields = ['created_at', 'completed_at', 'total_credits']
+    ordering = ['-created_at']  # Yeniləri birinci
     
     fieldsets = (
         ('User & Package', {'fields': ('user', 'package', 'status')}),
@@ -102,6 +138,7 @@ class PaymentAdmin(admin.ModelAdmin):
     list_filter = ['status', 'payment_type', 'payment_provider', 'created_at']
     search_fields = ['user__email', 'epoint_transaction_id', 'notes']
     readonly_fields = ['created_at', 'processed_at', 'completed_at', 'commission', 'tax', 'net_amount', 'epoint_amount']
+    ordering = ['-created_at']  # Yeniləri birinci
     
     fieldsets = (
         ('User & Type', {'fields': ('user', 'payment_type', 'status')}),
@@ -171,12 +208,61 @@ class PaymentAdmin(admin.ModelAdmin):
             topups=Count('id', filter=Q(payment_type='topup')),
         )
         
+        # Get FAL AI account balance
+        fal_balance = None
+        fal_error = None
+        try:
+            if hasattr(settings, 'FAL_KEY') and settings.FAL_KEY:
+                # Use FAL AI REST API to get account balance
+                import requests
+                headers = {
+                    'Authorization': f'Key {settings.FAL_KEY}',
+                    'Content-Type': 'application/json'
+                }
+                # Try FAL AI API endpoint for account info
+                # Common endpoints: /v1/account, /v1/user, /v1/balance
+                endpoints = [
+                    'https://fal.ai/api/v1/account',
+                    'https://fal.ai/api/v1/user',
+                    'https://fal.ai/api/v1/balance',
+                ]
+                
+                for endpoint in endpoints:
+                    try:
+                        response = requests.get(endpoint, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            account_data = response.json()
+                            # Try different possible keys for balance
+                            fal_balance = (
+                                account_data.get('balance') or 
+                                account_data.get('credits') or 
+                                account_data.get('credit_balance') or
+                                account_data.get('account_balance') or
+                                account_data.get('available_credits') or
+                                account_data.get('remaining_credits')
+                            )
+                            if fal_balance is not None:
+                                break
+                    except requests.exceptions.RequestException as e:
+                        logger.debug(f"FAL AI endpoint {endpoint} failed: {str(e)}")
+                        continue
+                
+                if fal_balance is None:
+                    fal_error = "Could not retrieve balance from FAL AI API"
+            else:
+                fal_error = "FAL_KEY not configured"
+        except Exception as e:
+            logger.error(f"Error accessing FAL AI API: {str(e)}")
+            fal_error = str(e)
+        
         extra_context['financial_summary'] = {
             'total_revenue': float(total_revenue),
             'total_commission': float(total_commission),
             'total_tax': float(total_tax),
             'total_net': float(total_net),
             'payment_counts': payment_counts,
+            'fal_balance': fal_balance,
+            'fal_error': fal_error,
         }
         
         return super().changelist_view(request, extra_context)

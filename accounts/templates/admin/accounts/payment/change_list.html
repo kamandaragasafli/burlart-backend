@@ -26,6 +26,17 @@
                 <div style="font-size: 12px; color: #868e96; text-transform: uppercase; margin-bottom: 5px;">Net Amount</div>
                 <div style="font-size: 24px; font-weight: bold; color: #212529;">₼{{ financial_summary.total_net|floatformat:2|intcomma }}</div>
             </div>
+            {% if financial_summary.fal_balance is not None %}
+            <div style="background: white; padding: 15px; border-radius: 6px; border-left: 4px solid #845ef7;">
+                <div style="font-size: 12px; color: #868e96; text-transform: uppercase; margin-bottom: 5px;">FAL AI Balance</div>
+                <div style="font-size: 24px; font-weight: bold; color: #212529;">${{ financial_summary.fal_balance|floatformat:2|intcomma }}</div>
+            </div>
+            {% elif financial_summary.fal_error %}
+            <div style="background: white; padding: 15px; border-radius: 6px; border-left: 4px solid #ff6b6b;">
+                <div style="font-size: 12px; color: #868e96; text-transform: uppercase; margin-bottom: 5px;">FAL AI Balance</div>
+                <div style="font-size: 14px; color: #ff6b6b; font-weight: bold;">Error: {{ financial_summary.fal_error }}</div>
+            </div>
+            {% endif %}
         </div>
         <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
             <div style="display: flex; gap: 30px;">
