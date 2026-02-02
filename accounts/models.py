@@ -160,6 +160,7 @@ class Subscription(models.Model):
     Supports auto-renewal and credit rollover management
     """
     PLAN_CHOICES = [
+        ('demo', 'Demo'),
         ('starter', 'Starter'),
         ('pro', 'Pro'),
         ('agency', 'Agency'),

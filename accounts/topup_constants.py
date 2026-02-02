@@ -11,12 +11,6 @@ DO NOT MODIFY THESE VALUES WITHOUT OWNER APPROVAL.
 # Top-up credit packages (LOCKED)
 # Format: package_id -> {price, credits}
 TOPUP_PACKAGES = {
-    'test': {
-        'name': 'Test Paket',
-        'price': 0.10,  # ₼ (AZN) - Test üçün
-        'currency': '₼',
-        'credits': 5,  # Test üçün kiçik kredit
-    },
     'small': {
         'name': 'Top-up S',
         'price': 10.00,  # ₼ (AZN)
