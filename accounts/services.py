@@ -381,10 +381,15 @@ class VideoGenerationService:
             video_gen.status = 'processing'
             video_gen.save()
             
-            # Get the result (this will wait for completion)
+            # Get the result with extended timeout (10 minutes for long video generation)
             logger.info(f"Waiting for result - Request ID: {handler.request_id}")
-            result = handler.get()
-            logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+            try:
+                # Use timeout parameter to prevent indefinite waiting
+                result = handler.get(timeout=600)  # 10 minutes timeout
+                logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+            except TimeoutError:
+                logger.error(f"Timeout waiting for result - Request ID: {handler.request_id}")
+                raise TimeoutError(f"Video generation timed out after 10 minutes")
             
             # Update with result - handle different response formats
             video_url = None
@@ -586,10 +591,15 @@ class ImageGenerationService:
             image_gen.status = 'processing'
             image_gen.save()
             
-            # Get the result (this will wait for completion)
+            # Get the result with extended timeout (5 minutes for image generation)
             logger.info(f"Waiting for result - Request ID: {handler.request_id}")
-            result = handler.get()
-            logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+            try:
+                # Use timeout parameter to prevent indefinite waiting
+                result = handler.get(timeout=300)  # 5 minutes timeout
+                logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+            except TimeoutError:
+                logger.error(f"Timeout waiting for result - Request ID: {handler.request_id}")
+                raise TimeoutError(f"Image generation timed out after 5 minutes")
             
             # Update with result
             if result and 'images' in result:
