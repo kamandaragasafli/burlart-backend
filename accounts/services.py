@@ -1,7 +1,10 @@
 import logging
 import threading
+import time
 import fal_client
 from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
 from .models import VideoGeneration, ImageGeneration, Subscription, CreditPurchase, Payment, CreditHold
 from django.db import models
 
@@ -426,12 +429,61 @@ class VideoGenerationService:
             # Start background thread to wait for result (non-blocking)
             # This prevents worker timeout and allows request to return immediately
             def process_video_result():
+                start_time = time.time()
+                max_wait_time = 30 * 60  # 30 minutes maximum
+                last_log_time = start_time
+                log_interval = 60  # Log every 60 seconds
+                
                 try:
                     logger.info(f"Background thread: Starting - Video ID: {video_gen.id}, Request ID: {handler.request_id}")
-                    logger.info(f"Background thread: Waiting for result - Request ID: {handler.request_id}")
+                    logger.info(f"Background thread: Waiting for result (max {max_wait_time/60} minutes) - Request ID: {handler.request_id}")
                     
-                    # Get result (this may take 10+ minutes)
-                    result = handler.get()
+                    # Get result with periodic logging
+                    # Note: handler.get() is blocking, but we'll log periodically
+                    result = None
+                    try:
+                        # Try to get result (this may take 10+ minutes)
+                        result = handler.get()
+                        elapsed = time.time() - start_time
+                        logger.info(f"Background thread: Result received after {elapsed:.1f} seconds - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+                    except Exception as get_error:
+                        elapsed = time.time() - start_time
+                        logger.error(f"Background thread: handler.get() failed after {elapsed:.1f} seconds - Error: {get_error}")
+                        raise
+                    
+                    # Check if we exceeded max wait time
+                    elapsed = time.time() - start_time
+                    if elapsed > max_wait_time:
+                        logger.warning(f"Background thread: Exceeded max wait time ({max_wait_time/60} minutes) - Video ID: {video_gen.id}")
+                        video_gen.refresh_from_db()
+                        video_gen.status = 'failed'
+                        video_gen.error_message = f"Video generation timed out after {elapsed/60:.1f} minutes"
+                        video_gen.save()
+                        
+                        # Release credit hold
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released due to timeout - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            pass
+                        return
+                    
+                    if not result:
+                        logger.error(f"Background thread: No result received - Request ID: {handler.request_id}")
+                        video_gen.refresh_from_db()
+                        video_gen.status = 'failed'
+                        video_gen.error_message = "No result received from fal.ai"
+                        video_gen.save()
+                        
+                        # Release credit hold
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released - No result - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            pass
+                        return
                     
                     logger.info(f"Background thread: Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
                     
