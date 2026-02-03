@@ -375,7 +375,19 @@ class VideoGenerationService:
             
             # Add duration/length
             if options.get('duration'):
-                arguments['duration'] = options['duration']
+                duration = options['duration']
+                
+                # Wan model only accepts 5, 10, 15 seconds
+                if tool == 'wan':
+                    # Round to nearest valid duration
+                    if duration <= 5:
+                        duration = 5
+                    elif duration <= 10:
+                        duration = 10
+                    else:
+                        duration = 15
+                
+                arguments['duration'] = duration
             
             # Add version if applicable (for Veo)
             if tool == 'veo':
