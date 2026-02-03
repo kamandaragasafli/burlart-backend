@@ -427,8 +427,12 @@ class VideoGenerationService:
             # This prevents worker timeout and allows request to return immediately
             def process_video_result():
                 try:
+                    logger.info(f"Background thread: Starting - Video ID: {video_gen.id}, Request ID: {handler.request_id}")
                     logger.info(f"Background thread: Waiting for result - Request ID: {handler.request_id}")
+                    
+                    # Get result (this may take 10+ minutes)
                     result = handler.get()
+                    
                     logger.info(f"Background thread: Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
                     
                     # Reload video_gen from database to get latest state
