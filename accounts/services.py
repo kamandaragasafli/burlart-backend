@@ -247,6 +247,28 @@ class VideoGenerationService:
         
         logger.info(f"Starting video generation - User: {user.email}, Tool: {tool}, Options: {options}")
         
+        # FIRST: Release old stuck credit holds (older than 30 minutes)
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        thirty_minutes_ago = timezone.now() - timedelta(minutes=30)
+        stuck_holds = CreditHold.objects.filter(
+            user=user,
+            status='hold',
+            created_at__lt=thirty_minutes_ago
+        )
+        
+        if stuck_holds.exists():
+            total_released = 0
+            for hold in stuck_holds:
+                total_released += hold.credits_held
+                hold.release()
+                logger.info(f"Auto-released stuck hold - Hold ID: {hold.id}, Credits: {hold.credits_held}")
+            logger.info(f"Total stuck credits released for {user.email}: {total_released}")
+            
+            # Refresh user to get updated credits
+            user.refresh_from_db()
+        
         tool_config = VideoGenerationService.get_tool_config(tool)
         
         if not tool_config:
@@ -499,6 +521,28 @@ class ImageGenerationService:
             options = {}
         
         logger.info(f"Starting image generation - User: {user.email}, Tool: {tool}, Options: {options}")
+        
+        # FIRST: Release old stuck credit holds (older than 30 minutes)
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        thirty_minutes_ago = timezone.now() - timedelta(minutes=30)
+        stuck_holds = CreditHold.objects.filter(
+            user=user,
+            status='hold',
+            created_at__lt=thirty_minutes_ago
+        )
+        
+        if stuck_holds.exists():
+            total_released = 0
+            for hold in stuck_holds:
+                total_released += hold.credits_held
+                hold.release()
+                logger.info(f"Auto-released stuck hold - Hold ID: {hold.id}, Credits: {hold.credits_held}")
+            logger.info(f"Total stuck credits released for {user.email}: {total_released}")
+            
+            # Refresh user to get updated credits
+            user.refresh_from_db()
         
         tool_config = ImageGenerationService.get_tool_config(tool)
         
