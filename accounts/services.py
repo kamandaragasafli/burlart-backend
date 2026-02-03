@@ -11,6 +11,42 @@ from django.db import models
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# Helper function to sanitize error messages for users
+# ============================================================================
+def sanitize_error_message(error_message, error_type=None):
+    """
+    Sanitize error messages to hide fal.ai details from users.
+    Returns a user-friendly error message.
+    """
+    if not error_message:
+        return "Video generation failed. Please try again."
+    
+    error_lower = error_message.lower()
+    
+    # Hide fal.ai specific errors
+    if 'fal.ai' in error_lower or 'fal_client' in error_lower or 'falclient' in error_lower:
+        # Check for specific error types
+        if 'exhausted balance' in error_lower or 'locked' in error_lower:
+            return "Video generation service is temporarily unavailable. Please try again later."
+        elif 'timeout' in error_lower:
+            return "Video generation timed out. Please try again."
+        elif 'invalid' in error_lower or 'validation' in error_lower:
+            return "Invalid request. Please check your input and try again."
+        else:
+            return "Video generation failed. Please try again."
+    
+    # Hide technical error types from users
+    if error_type and ('FalClientHTTPError' in error_type or 'HTTPError' in error_type):
+        return "Video generation service is temporarily unavailable. Please try again later."
+    
+    # Remove technical details
+    if 'http' in error_lower or 'api' in error_lower or 'request' in error_lower:
+        return "Video generation failed. Please try again."
+    
+    # Return original message if it's user-friendly
+    return error_message
+
+# ============================================================================
 # LOCKED PRICING CONFIGURATION - DO NOT MODIFY
 # ============================================================================
 # These prices are FIXED and LOCKED. They cannot be changed from admin panel
@@ -457,7 +493,7 @@ class VideoGenerationService:
                         logger.warning(f"Background thread: Exceeded max wait time ({max_wait_time/60} minutes) - Video ID: {video_gen.id}")
                         video_gen.refresh_from_db()
                         video_gen.status = 'failed'
-                        video_gen.error_message = f"Video generation timed out after {elapsed/60:.1f} minutes"
+                        video_gen.error_message = "Video generation timed out. Please try again."
                         video_gen.save()
                         
                         # Release credit hold
@@ -473,7 +509,7 @@ class VideoGenerationService:
                         logger.error(f"Background thread: No result received - Request ID: {handler.request_id}")
                         video_gen.refresh_from_db()
                         video_gen.status = 'failed'
-                        video_gen.error_message = "No result received from fal.ai"
+                        video_gen.error_message = "Video generation failed. Please try again."
                         video_gen.save()
                         
                         # Release credit hold
@@ -540,7 +576,8 @@ class VideoGenerationService:
                             logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
                     else:
                         video_gen.status = 'failed'
-                        video_gen.error_message = f"No video URL in response. Result keys: {list(result.keys()) if result else 'None'}, Full result: {str(result)[:500]}"
+                        # Sanitize error message - don't show technical details to user
+                        video_gen.error_message = "Video generation failed. Please try again."
                         logger.error(f"Background thread: No video in result - ID: {video_gen.id}, Result keys: {list(result.keys()) if result else 'None'}")
                         logger.error(f"Background thread: Full result: {result}")
                         
@@ -574,11 +611,12 @@ class VideoGenerationService:
                     except Exception as release_error:
                         logger.error(f"Background thread: Error releasing credit hold: {release_error}")
                     
-                    # Update video_gen status
+                    # Update video_gen status with sanitized error message
                     try:
                         video_gen.refresh_from_db()
                         video_gen.status = 'failed'
-                        video_gen.error_message = f"{error_type}: {error_message}"
+                        # Sanitize error message to hide fal.ai details
+                        video_gen.error_message = sanitize_error_message(error_message, error_type)
                         video_gen.save()
                     except Exception as save_error:
                         logger.error(f"Background thread: Error saving video_gen status: {save_error}")
@@ -827,7 +865,8 @@ class ImageGenerationService:
                             logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
                     else:
                         image_gen.status = 'failed'
-                        image_gen.error_message = f"No image URL in response. Result keys: {list(result.keys()) if result else 'None'}"
+                        # Sanitize error message - don't show technical details to user
+                        image_gen.error_message = "Image generation failed. Please try again."
                         logger.error(f"Background thread: No image in result - ID: {image_gen.id}, Result: {result}")
                         
                         # RELEASE credit hold (return credits to user)
@@ -860,11 +899,12 @@ class ImageGenerationService:
                     except Exception as release_error:
                         logger.error(f"Background thread: Error releasing credit hold: {release_error}")
                     
-                    # Update image_gen status
+                    # Update image_gen status with sanitized error message
                     try:
                         image_gen.refresh_from_db()
                         image_gen.status = 'failed'
-                        image_gen.error_message = f"{error_type}: {error_message}"
+                        # Sanitize error message to hide fal.ai details
+                        image_gen.error_message = sanitize_error_message(error_message, error_type).replace("Video", "Image")
                         image_gen.save()
                     except Exception as save_error:
                         logger.error(f"Background thread: Error saving image_gen status: {save_error}")
@@ -888,7 +928,8 @@ class ImageGenerationService:
             if 'image_gen' in locals():
                 try:
                     image_gen.status = 'failed'
-                    image_gen.error_message = f"{error_type}: {error_message}"
+                    # Sanitize error message to hide fal.ai details
+                    image_gen.error_message = sanitize_error_message(error_message, error_type).replace("Video", "Image")
                     image_gen.save()
                     
                     # RELEASE credit hold (return credits to user)
