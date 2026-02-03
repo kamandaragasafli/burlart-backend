@@ -1,0 +1,22 @@
+[Unit]
+Description=Gunicorn daemon for Burlart Backend
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/root/var/www/burlart-backend
+Environment="PATH=/root/var/www/burlart-backend/venv/bin"
+ExecStart=/root/var/www/burlart-backend/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 0.0.0.0:8000 \
+    --timeout 900 \
+    --graceful-timeout 120 \
+    --keep-alive 5 \
+    config.wsgi:application
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+

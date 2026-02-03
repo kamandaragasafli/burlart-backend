@@ -1,4 +1,5 @@
 import logging
+import threading
 import fal_client
 from django.conf import settings
 from .models import VideoGeneration, ImageGeneration, Subscription, CreditPurchase, Payment, CreditHold
@@ -422,92 +423,141 @@ class VideoGenerationService:
             video_gen.status = 'processing'
             video_gen.save()
             
-            # Get the result (this will wait for completion)
-            # Note: fal.ai SDK doesn't support timeout parameter, timeout is handled by gunicorn/nginx
-            logger.info(f"Waiting for result - Request ID: {handler.request_id}")
-            result = handler.get()
-            logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
-            
-            # Update with result - handle different response formats
-            video_url = None
-            
-            # Try different response formats from different models
-            if result:
-                logger.info(f"Parsing result - Full result: {result}")
-                
-                # Format 1: result['video']['url'] (most common)
-                if 'video' in result:
-                    if isinstance(result['video'], dict) and 'url' in result['video']:
-                        video_url = result['video']['url']
-                    elif isinstance(result['video'], str):
-                        video_url = result['video']
-                
-                # Format 2: result['videos'][0] (array)
-                elif 'videos' in result:
-                    if isinstance(result['videos'], list) and len(result['videos']) > 0:
-                        if isinstance(result['videos'][0], dict):
-                            video_url = result['videos'][0].get('url')
-                        else:
-                            video_url = result['videos'][0]
-                
-                # Format 3: result['output'] (some models)
-                elif 'output' in result:
-                    if isinstance(result['output'], dict):
-                        video_url = result['output'].get('url') or result['output'].get('video')
-                    elif isinstance(result['output'], str):
-                        video_url = result['output']
-                
-                # Format 4: result['data'] (some models)
-                elif 'data' in result:
-                    if isinstance(result['data'], dict):
-                        video_url = result['data'].get('url') or result['data'].get('video')
-                    elif isinstance(result['data'], str):
-                        video_url = result['data']
-            
-            if video_url:
-                video_gen.video_url = video_url
-                video_gen.status = 'completed'
-                logger.info(f"Video generation completed - ID: {video_gen.id}, URL: {video_gen.video_url}")
-                
-                # CONFIRM credit hold (credits are permanently deducted)
+            # Start background thread to wait for result (non-blocking)
+            # This prevents worker timeout and allows request to return immediately
+            def process_video_result():
                 try:
-                    credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
-                    credit_hold.confirm()
-                    logger.info(f"Credit hold confirmed - Hold ID: {credit_hold.id}")
-                except CreditHold.DoesNotExist:
-                    logger.warning(f"No credit hold found for video generation {video_gen.id}")
-            else:
-                video_gen.status = 'failed'
-                video_gen.error_message = f"No video URL in response. Result keys: {list(result.keys()) if result else 'None'}, Full result: {str(result)[:500]}"
-                logger.error(f"No video in result - ID: {video_gen.id}, Result keys: {list(result.keys()) if result else 'None'}")
-                logger.error(f"Full result: {result}")
-                
-                # RELEASE credit hold (return credits to user)
-                try:
-                    credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
-                    credit_hold.release()
-                    logger.info(f"Credit hold released - Hold ID: {credit_hold.id}, Credits returned to user")
-                except CreditHold.DoesNotExist:
-                    logger.warning(f"No credit hold found for video generation {video_gen.id}")
+                    logger.info(f"Background thread: Waiting for result - Request ID: {handler.request_id}")
+                    result = handler.get()
+                    logger.info(f"Background thread: Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+                    
+                    # Reload video_gen from database to get latest state
+                    video_gen.refresh_from_db()
+                    
+                    # Update with result - handle different response formats
+                    video_url = None
+                    
+                    # Try different response formats from different models
+                    if result:
+                        logger.info(f"Background thread: Parsing result - Full result: {result}")
+                        
+                        # Format 1: result['video']['url'] (most common)
+                        if 'video' in result:
+                            if isinstance(result['video'], dict) and 'url' in result['video']:
+                                video_url = result['video']['url']
+                            elif isinstance(result['video'], str):
+                                video_url = result['video']
+                        
+                        # Format 2: result['videos'][0] (array)
+                        elif 'videos' in result:
+                            if isinstance(result['videos'], list) and len(result['videos']) > 0:
+                                if isinstance(result['videos'][0], dict):
+                                    video_url = result['videos'][0].get('url')
+                                else:
+                                    video_url = result['videos'][0]
+                        
+                        # Format 3: result['output'] (some models)
+                        elif 'output' in result:
+                            if isinstance(result['output'], dict):
+                                video_url = result['output'].get('url') or result['output'].get('video')
+                            elif isinstance(result['output'], str):
+                                video_url = result['output']
+                        
+                        # Format 4: result['data'] (some models)
+                        elif 'data' in result:
+                            if isinstance(result['data'], dict):
+                                video_url = result['data'].get('url') or result['data'].get('video')
+                            elif isinstance(result['data'], str):
+                                video_url = result['data']
+                    
+                    if video_url:
+                        video_gen.video_url = video_url
+                        video_gen.status = 'completed'
+                        logger.info(f"Background thread: Video generation completed - ID: {video_gen.id}, URL: {video_gen.video_url}")
+                        
+                        # CONFIRM credit hold (credits are permanently deducted)
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.confirm()
+                            logger.info(f"Background thread: Credit hold confirmed - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
+                    else:
+                        video_gen.status = 'failed'
+                        video_gen.error_message = f"No video URL in response. Result keys: {list(result.keys()) if result else 'None'}, Full result: {str(result)[:500]}"
+                        logger.error(f"Background thread: No video in result - ID: {video_gen.id}, Result keys: {list(result.keys()) if result else 'None'}")
+                        logger.error(f"Background thread: Full result: {result}")
+                        
+                        # RELEASE credit hold (return credits to user)
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released - Hold ID: {credit_hold.id}, Credits returned to user")
+                        except CreditHold.DoesNotExist:
+                            logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
+                    
+                    video_gen.save()
+                    
+                except Exception as e:
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    logger.error(
+                        f"Background thread: Video generation exception - User: {user.email}, Tool: {tool}, "
+                        f"Video ID: {video_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                        exc_info=True
+                    )
+                    
+                    # RELEASE credit hold (return credits to user)
+                    try:
+                        video_gen.refresh_from_db()
+                        credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                        credit_hold.release()
+                        logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                    except CreditHold.DoesNotExist:
+                        logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
+                    except Exception as release_error:
+                        logger.error(f"Background thread: Error releasing credit hold: {release_error}")
+                    
+                    # Update video_gen status
+                    try:
+                        video_gen.refresh_from_db()
+                        video_gen.status = 'failed'
+                        video_gen.error_message = f"{error_type}: {error_message}"
+                        video_gen.save()
+                    except Exception as save_error:
+                        logger.error(f"Background thread: Error saving video_gen status: {save_error}")
             
-            video_gen.save()
+            # Start background thread
+            thread = threading.Thread(target=process_video_result, daemon=True)
+            thread.start()
+            logger.info(f"Background thread started for video generation - ID: {video_gen.id}, Request ID: {handler.request_id}")
             
         except Exception as e:
+            # Only handle errors BEFORE submitting to fal.ai (validation, credit check, etc.)
             error_type = type(e).__name__
             error_message = str(e)
             logger.error(
-                f"Video generation exception - User: {user.email}, Tool: {tool}, "
-                f"Video ID: {video_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                f"Video generation exception (before fal.ai submission) - User: {user.email}, Tool: {tool}, "
+                f"Error Type: {error_type}, Error: {error_message}",
                 exc_info=True
             )
             
-            # RELEASE credit hold (return credits to user)
-            try:
-                credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
-                credit_hold.release()
-                logger.info(f"Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
-            except CreditHold.DoesNotExist:
-                logger.warning(f"No credit hold found for video generation {video_gen.id}")
+            # If video_gen was created, update its status
+            if 'video_gen' in locals():
+                try:
+                    video_gen.status = 'failed'
+                    video_gen.error_message = f"{error_type}: {error_message}"
+                    video_gen.save()
+                    
+                    # RELEASE credit hold (return credits to user)
+                    try:
+                        credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                        credit_hold.release()
+                        logger.info(f"Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                    except CreditHold.DoesNotExist:
+                        logger.warning(f"No credit hold found for video generation {video_gen.id}")
+                except Exception as save_error:
+                    logger.error(f"Error updating video_gen status: {save_error}")
             
             video_gen.status = 'failed'
             video_gen.error_message = f"{error_type}: {error_message}"
@@ -650,78 +700,124 @@ class ImageGenerationService:
             image_gen.status = 'processing'
             image_gen.save()
             
-            # Get the result (this will wait for completion)
-            # Note: fal.ai SDK doesn't support timeout parameter, timeout is handled by gunicorn/nginx
-            logger.info(f"Waiting for result - Request ID: {handler.request_id}")
-            result = handler.get()
-            logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+            # Start background thread to wait for result (non-blocking)
+            def process_image_result():
+                try:
+                    logger.info(f"Background thread: Waiting for result - Request ID: {handler.request_id}")
+                    result = handler.get()
+                    logger.info(f"Background thread: Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
+                    
+                    # Reload image_gen from database to get latest state
+                    image_gen.refresh_from_db()
+                    
+                    # Update with result
+                    if result and 'images' in result:
+                        # Some models return 'images' array
+                        if isinstance(result['images'], list) and len(result['images']) > 0:
+                            image_gen.image_url = result['images'][0].get('url') if isinstance(result['images'][0], dict) else result['images'][0]
+                        else:
+                            image_gen.image_url = result['images']
+                        image_gen.status = 'completed'
+                        logger.info(f"Background thread: Image generation completed - ID: {image_gen.id}, URL: {image_gen.image_url}")
+                        
+                        # CONFIRM credit hold (credits are permanently deducted)
+                        try:
+                            credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                            credit_hold.confirm()
+                            logger.info(f"Background thread: Credit hold confirmed - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
+                    elif result and 'image' in result:
+                        # Some models return 'image' object
+                        if isinstance(result['image'], dict):
+                            image_gen.image_url = result['image'].get('url')
+                        else:
+                            image_gen.image_url = result['image']
+                        image_gen.status = 'completed'
+                        logger.info(f"Background thread: Image generation completed - ID: {image_gen.id}, URL: {image_gen.image_url}")
+                        
+                        # CONFIRM credit hold (credits are permanently deducted)
+                        try:
+                            credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                            credit_hold.confirm()
+                            logger.info(f"Background thread: Credit hold confirmed - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
+                    else:
+                        image_gen.status = 'failed'
+                        image_gen.error_message = f"No image URL in response. Result keys: {list(result.keys()) if result else 'None'}"
+                        logger.error(f"Background thread: No image in result - ID: {image_gen.id}, Result: {result}")
+                        
+                        # RELEASE credit hold (return credits to user)
+                        try:
+                            credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released - Hold ID: {credit_hold.id}, Credits returned")
+                        except CreditHold.DoesNotExist:
+                            logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
+                    
+                    image_gen.save()
+                    
+                except Exception as e:
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    logger.error(
+                        f"Background thread: Image generation exception - User: {user.email}, Tool: {tool}, "
+                        f"Image ID: {image_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                        exc_info=True
+                    )
+                    
+                    # RELEASE credit hold (return credits to user)
+                    try:
+                        image_gen.refresh_from_db()
+                        credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                        credit_hold.release()
+                        logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                    except CreditHold.DoesNotExist:
+                        logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
+                    except Exception as release_error:
+                        logger.error(f"Background thread: Error releasing credit hold: {release_error}")
+                    
+                    # Update image_gen status
+                    try:
+                        image_gen.refresh_from_db()
+                        image_gen.status = 'failed'
+                        image_gen.error_message = f"{error_type}: {error_message}"
+                        image_gen.save()
+                    except Exception as save_error:
+                        logger.error(f"Background thread: Error saving image_gen status: {save_error}")
             
-            # Update with result
-            if result and 'images' in result:
-                # Some models return 'images' array
-                if isinstance(result['images'], list) and len(result['images']) > 0:
-                    image_gen.image_url = result['images'][0].get('url') if isinstance(result['images'][0], dict) else result['images'][0]
-                else:
-                    image_gen.image_url = result['images']
-                image_gen.status = 'completed'
-                logger.info(f"Image generation completed - ID: {image_gen.id}, URL: {image_gen.image_url}")
-                
-                # CONFIRM credit hold (credits are permanently deducted)
-                try:
-                    credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
-                    credit_hold.confirm()
-                    logger.info(f"Credit hold confirmed - Hold ID: {credit_hold.id}")
-                except CreditHold.DoesNotExist:
-                    logger.warning(f"No credit hold found for image generation {image_gen.id}")
-            elif result and 'image' in result:
-                # Some models return 'image' object
-                if isinstance(result['image'], dict):
-                    image_gen.image_url = result['image'].get('url')
-                else:
-                    image_gen.image_url = result['image']
-                image_gen.status = 'completed'
-                logger.info(f"Image generation completed - ID: {image_gen.id}, URL: {image_gen.image_url}")
-                
-                # CONFIRM credit hold (credits are permanently deducted)
-                try:
-                    credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
-                    credit_hold.confirm()
-                    logger.info(f"Credit hold confirmed - Hold ID: {credit_hold.id}")
-                except CreditHold.DoesNotExist:
-                    logger.warning(f"No credit hold found for image generation {image_gen.id}")
-            else:
-                image_gen.status = 'failed'
-                image_gen.error_message = f"No image URL in response. Result keys: {list(result.keys()) if result else 'None'}"
-                logger.error(f"No image in result - ID: {image_gen.id}, Result: {result}")
-                
-                # RELEASE credit hold (return credits to user)
-                try:
-                    credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
-                    credit_hold.release()
-                    logger.info(f"Credit hold released - Hold ID: {credit_hold.id}, Credits returned")
-                except CreditHold.DoesNotExist:
-                    logger.warning(f"No credit hold found for image generation {image_gen.id}")
-            
-            image_gen.save()
+            # Start background thread
+            thread = threading.Thread(target=process_image_result, daemon=True)
+            thread.start()
+            logger.info(f"Background thread started for image generation - ID: {image_gen.id}, Request ID: {handler.request_id}")
             
         except Exception as e:
+            # Only handle errors BEFORE submitting to fal.ai (validation, credit check, etc.)
             error_type = type(e).__name__
             error_message = str(e)
             logger.error(
-                f"Image generation exception - User: {user.email}, Tool: {tool}, "
-                f"Image ID: {image_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                f"Image generation exception (before fal.ai submission) - User: {user.email}, Tool: {tool}, "
+                f"Error Type: {error_type}, Error: {error_message}",
                 exc_info=True
             )
             
-            # RELEASE credit hold (return credits to user)
-            try:
-                credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
-                credit_hold.release()
-                logger.info(f"Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
-            except CreditHold.DoesNotExist:
-                logger.warning(f"No credit hold found for image generation {image_gen.id}")
-            
-            image_gen.status = 'failed'
+            # If image_gen was created, update its status
+            if 'image_gen' in locals():
+                try:
+                    image_gen.status = 'failed'
+                    image_gen.error_message = f"{error_type}: {error_message}"
+                    image_gen.save()
+                    
+                    # RELEASE credit hold (return credits to user)
+                    try:
+                        credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                        credit_hold.release()
+                        logger.info(f"Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                    except CreditHold.DoesNotExist:
+                        logger.warning(f"No credit hold found for image generation {image_gen.id}")
+                except Exception as save_error:
+                    logger.error(f"Error updating image_gen status: {save_error}")
             image_gen.error_message = f"{error_type}: {error_message}"
             image_gen.save()
             
