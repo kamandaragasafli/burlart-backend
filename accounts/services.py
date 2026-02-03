@@ -22,11 +22,19 @@ def sanitize_error_message(error_message, error_type=None):
         return "Video generation failed. Please try again."
     
     error_lower = error_message.lower()
+    error_original = str(error_message)
     
-    # Hide fal.ai specific errors
-    if 'fal.ai' in error_lower or 'fal_client' in error_lower or 'falclient' in error_lower:
+    # Hide fal.ai specific errors - check multiple patterns
+    fal_patterns = [
+        'fal.ai', 'fal_client', 'falclient', 'falclienthttperror',
+        'fal.ai/dashboard', 'fal.ai/billing', 'top up your balance'
+    ]
+    
+    has_fal_reference = any(pattern in error_lower for pattern in fal_patterns)
+    
+    if has_fal_reference or (error_type and 'FalClientHTTPError' in error_type):
         # Check for specific error types
-        if 'exhausted balance' in error_lower or 'locked' in error_lower:
+        if 'exhausted balance' in error_lower or 'locked' in error_lower or 'balance' in error_lower:
             return "Video generation service is temporarily unavailable. Please try again later."
         elif 'timeout' in error_lower:
             return "Video generation timed out. Please try again."
@@ -36,14 +44,20 @@ def sanitize_error_message(error_message, error_type=None):
             return "Video generation failed. Please try again."
     
     # Hide technical error types from users
-    if error_type and ('FalClientHTTPError' in error_type or 'HTTPError' in error_type):
+    if error_type and ('HTTPError' in error_type or 'HTTP' in error_type):
         return "Video generation service is temporarily unavailable. Please try again later."
     
-    # Remove technical details
-    if 'http' in error_lower or 'api' in error_lower or 'request' in error_lower:
+    # Remove technical details and URLs
+    if 'http' in error_lower or 'api' in error_lower or 'request' in error_lower or '://' in error_original:
         return "Video generation failed. Please try again."
     
-    # Return original message if it's user-friendly
+    # Remove any URLs from error message
+    import re
+    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    if re.search(url_pattern, error_original):
+        return "Video generation failed. Please try again."
+    
+    # Return original message if it's user-friendly (no technical details)
     return error_message
 
 # ============================================================================
