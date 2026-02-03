@@ -941,8 +941,14 @@ class ImageGenerationService:
                         logger.warning(f"No credit hold found for image generation {image_gen.id}")
                 except Exception as save_error:
                     logger.error(f"Error updating image_gen status: {save_error}")
-            image_gen.error_message = f"{error_type}: {error_message}"
-            image_gen.save()
+            
+            # Final fallback - sanitize error message
+            if 'image_gen' in locals():
+                try:
+                    image_gen.error_message = sanitize_error_message(error_message, error_type).replace("Video", "Image")
+                    image_gen.save()
+                except:
+                    pass
             
             raise
         
