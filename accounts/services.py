@@ -583,10 +583,38 @@ class VideoGenerationService:
                     except Exception as save_error:
                         logger.error(f"Background thread: Error saving video_gen status: {save_error}")
             
-            # Start background thread
+            # Start background thread for processing
             thread = threading.Thread(target=process_video_result, daemon=True)
             thread.start()
-            logger.info(f"Background thread started for video generation - ID: {video_gen.id}, Request ID: {handler.request_id}")
+            logger.info(f"Background thread started for video generation - ID: {video_gen.id}, Request ID: {handler.request_id}, Thread ID: {thread.ident}")
+            
+            # Start timeout thread - check after 30 minutes if still processing
+            def timeout_check():
+                time.sleep(30 * 60)  # Wait 30 minutes
+                try:
+                    video_gen.refresh_from_db()
+                    if video_gen.status == 'processing':
+                        logger.warning(f"Timeout thread: Video generation still processing after 30 minutes - ID: {video_gen.id}, Marking as failed")
+                        video_gen.status = 'failed'
+                        video_gen.error_message = "Video generation timed out after 30 minutes. Please try again."
+                        video_gen.save()
+                        
+                        # Release credit hold
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Timeout thread: Credit hold released due to timeout - Hold ID: {credit_hold.id}")
+                        except CreditHold.DoesNotExist:
+                            pass
+                except Exception as e:
+                    logger.error(f"Timeout thread: Error checking timeout - {e}")
+            
+            timeout_thread = threading.Thread(target=timeout_check, daemon=True)
+            timeout_thread.start()
+            logger.info(f"Timeout thread started for video generation - ID: {video_gen.id}")
+            
+            # Return immediately - video generation continues in background
+            # Frontend will poll /videos/ endpoint to check status
             
         except Exception as e:
             # Only handle errors BEFORE submitting to fal.ai (validation, credit check, etc.)
