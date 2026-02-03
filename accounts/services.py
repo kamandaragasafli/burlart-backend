@@ -527,6 +527,11 @@ class ImageGenerationService:
                 "prompt": prompt
             }
             
+            # Add reference image if provided (for image-to-image models)
+            if options.get('referenceImage'):
+                arguments['image_url'] = options['referenceImage']
+                logger.info(f"Adding reference image for image-to-image: {options['referenceImage'][:100]}...")
+            
             # Add negative prompt if provided
             if options.get('negativePrompt'):
                 arguments['negative_prompt'] = options['negativePrompt']
