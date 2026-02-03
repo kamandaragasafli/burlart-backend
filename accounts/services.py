@@ -386,9 +386,44 @@ class VideoGenerationService:
             result = handler.get()
             logger.info(f"Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
             
-            # Update with result
-            if result and 'video' in result:
-                video_gen.video_url = result['video']['url']
+            # Update with result - handle different response formats
+            video_url = None
+            
+            # Try different response formats from different models
+            if result:
+                logger.info(f"Parsing result - Full result: {result}")
+                
+                # Format 1: result['video']['url'] (most common)
+                if 'video' in result:
+                    if isinstance(result['video'], dict) and 'url' in result['video']:
+                        video_url = result['video']['url']
+                    elif isinstance(result['video'], str):
+                        video_url = result['video']
+                
+                # Format 2: result['videos'][0] (array)
+                elif 'videos' in result:
+                    if isinstance(result['videos'], list) and len(result['videos']) > 0:
+                        if isinstance(result['videos'][0], dict):
+                            video_url = result['videos'][0].get('url')
+                        else:
+                            video_url = result['videos'][0]
+                
+                # Format 3: result['output'] (some models)
+                elif 'output' in result:
+                    if isinstance(result['output'], dict):
+                        video_url = result['output'].get('url') or result['output'].get('video')
+                    elif isinstance(result['output'], str):
+                        video_url = result['output']
+                
+                # Format 4: result['data'] (some models)
+                elif 'data' in result:
+                    if isinstance(result['data'], dict):
+                        video_url = result['data'].get('url') or result['data'].get('video')
+                    elif isinstance(result['data'], str):
+                        video_url = result['data']
+            
+            if video_url:
+                video_gen.video_url = video_url
                 video_gen.status = 'completed'
                 logger.info(f"Video generation completed - ID: {video_gen.id}, URL: {video_gen.video_url}")
                 
@@ -401,14 +436,15 @@ class VideoGenerationService:
                     logger.warning(f"No credit hold found for video generation {video_gen.id}")
             else:
                 video_gen.status = 'failed'
-                video_gen.error_message = f"No video URL in response. Result keys: {list(result.keys()) if result else 'None'}"
-                logger.error(f"No video in result - ID: {video_gen.id}, Result: {result}")
+                video_gen.error_message = f"No video URL in response. Result keys: {list(result.keys()) if result else 'None'}, Full result: {str(result)[:500]}"
+                logger.error(f"No video in result - ID: {video_gen.id}, Result keys: {list(result.keys()) if result else 'None'}")
+                logger.error(f"Full result: {result}")
                 
                 # RELEASE credit hold (return credits to user)
                 try:
                     credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
                     credit_hold.release()
-                    logger.info(f"Credit hold released - Hold ID: {credit_hold.id}, Credits returned")
+                    logger.info(f"Credit hold released - Hold ID: {credit_hold.id}, Credits returned to user")
                 except CreditHold.DoesNotExist:
                     logger.warning(f"No credit hold found for video generation {video_gen.id}")
             
@@ -526,11 +562,6 @@ class ImageGenerationService:
             arguments = {
                 "prompt": prompt
             }
-            
-            # Add reference image if provided (for image-to-image models)
-            if options.get('referenceImage'):
-                arguments['image_url'] = options['referenceImage']
-                logger.info(f"Adding reference image for image-to-image: {options['referenceImage'][:100]}...")
             
             # Add negative prompt if provided
             if options.get('negativePrompt'):
