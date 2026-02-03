@@ -485,6 +485,12 @@ class VideoGenerationService:
                 log_interval = 60  # Log every 60 seconds
                 
                 try:
+                    # Check if already processed to prevent duplicate processing
+                    video_gen.refresh_from_db()
+                    if video_gen.status in ['completed', 'failed']:
+                        logger.info(f"Background thread: Video generation already processed - ID: {video_gen.id}, Status: {video_gen.status}")
+                        return
+                    
                     logger.info(f"Background thread: Starting - Video ID: {video_gen.id}, Request ID: {handler.request_id}")
                     logger.info(f"Background thread: Waiting for result (max {max_wait_time/60} minutes) - Request ID: {handler.request_id}")
                     
@@ -608,32 +614,39 @@ class VideoGenerationService:
                 except Exception as e:
                     error_type = type(e).__name__
                     error_message = str(e)
-                    logger.error(
-                        f"Background thread: Video generation exception - User: {user.email}, Tool: {tool}, "
-                        f"Video ID: {video_gen.id}, Error Type: {error_type}, Error: {error_message}",
-                        exc_info=True
-                    )
                     
-                    # RELEASE credit hold (return credits to user)
+                    # Check if error already logged for this video_gen to prevent duplicates
                     try:
                         video_gen.refresh_from_db()
-                        credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
-                        credit_hold.release()
-                        logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
-                    except CreditHold.DoesNotExist:
-                        logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
-                    except Exception as release_error:
-                        logger.error(f"Background thread: Error releasing credit hold: {release_error}")
-                    
-                    # Update video_gen status with sanitized error message
-                    try:
-                        video_gen.refresh_from_db()
-                        video_gen.status = 'failed'
-                        # Sanitize error message to hide fal.ai details
-                        video_gen.error_message = sanitize_error_message(error_message, error_type)
-                        video_gen.save()
+                        # Only log if not already in failed state to prevent duplicate logs
+                        if video_gen.status != 'failed':
+                            logger.error(
+                                f"Background thread: Video generation exception - User: {user.email}, Tool: {tool}, "
+                                f"Video ID: {video_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                                exc_info=True
+                            )
+                        
+                        # RELEASE credit hold (return credits to user)
+                        try:
+                            credit_hold = CreditHold.objects.get(video_generation=video_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                        except CreditHold.DoesNotExist:
+                            # Don't log warning if already failed - credit hold might already be released
+                            if video_gen.status != 'failed':
+                                logger.warning(f"Background thread: No credit hold found for video generation {video_gen.id}")
+                        except Exception as release_error:
+                            logger.error(f"Background thread: Error releasing credit hold: {release_error}")
+                        
+                        # Update video_gen status with sanitized error message
+                        if video_gen.status != 'failed':
+                            video_gen.status = 'failed'
+                            # Sanitize error message to hide fal.ai details
+                            video_gen.error_message = sanitize_error_message(error_message, error_type)
+                            video_gen.save()
                     except Exception as save_error:
-                        logger.error(f"Background thread: Error saving video_gen status: {save_error}")
+                        # Only log once if there's a critical save error
+                        logger.error(f"Background thread: Critical error handling failure for video {video_gen.id}: {save_error}")
             
             # Start background thread for processing
             thread = threading.Thread(target=process_video_result, daemon=True)
@@ -837,6 +850,12 @@ class ImageGenerationService:
             # Start background thread to wait for result (non-blocking)
             def process_image_result():
                 try:
+                    # Check if already processed to prevent duplicate processing
+                    image_gen.refresh_from_db()
+                    if image_gen.status in ['completed', 'failed']:
+                        logger.info(f"Background thread: Image generation already processed - ID: {image_gen.id}, Status: {image_gen.status}")
+                        return
+                    
                     logger.info(f"Background thread: Waiting for result - Request ID: {handler.request_id}")
                     result = handler.get()
                     logger.info(f"Background thread: Result received - Request ID: {handler.request_id}, Result keys: {list(result.keys()) if result else 'None'}")
@@ -896,32 +915,39 @@ class ImageGenerationService:
                 except Exception as e:
                     error_type = type(e).__name__
                     error_message = str(e)
-                    logger.error(
-                        f"Background thread: Image generation exception - User: {user.email}, Tool: {tool}, "
-                        f"Image ID: {image_gen.id}, Error Type: {error_type}, Error: {error_message}",
-                        exc_info=True
-                    )
                     
-                    # RELEASE credit hold (return credits to user)
+                    # Check if error already logged for this image_gen to prevent duplicates
                     try:
                         image_gen.refresh_from_db()
-                        credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
-                        credit_hold.release()
-                        logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
-                    except CreditHold.DoesNotExist:
-                        logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
-                    except Exception as release_error:
-                        logger.error(f"Background thread: Error releasing credit hold: {release_error}")
-                    
-                    # Update image_gen status with sanitized error message
-                    try:
-                        image_gen.refresh_from_db()
-                        image_gen.status = 'failed'
-                        # Sanitize error message to hide fal.ai details
-                        image_gen.error_message = sanitize_error_message(error_message, error_type).replace("Video", "Image")
-                        image_gen.save()
+                        # Only log if not already in failed state to prevent duplicate logs
+                        if image_gen.status != 'failed':
+                            logger.error(
+                                f"Background thread: Image generation exception - User: {user.email}, Tool: {tool}, "
+                                f"Image ID: {image_gen.id}, Error Type: {error_type}, Error: {error_message}",
+                                exc_info=True
+                            )
+                        
+                        # RELEASE credit hold (return credits to user)
+                        try:
+                            credit_hold = CreditHold.objects.get(image_generation=image_gen, status='hold')
+                            credit_hold.release()
+                            logger.info(f"Background thread: Credit hold released due to error - Hold ID: {credit_hold.id}, Credits returned")
+                        except CreditHold.DoesNotExist:
+                            # Don't log warning if already failed - credit hold might already be released
+                            if image_gen.status != 'failed':
+                                logger.warning(f"Background thread: No credit hold found for image generation {image_gen.id}")
+                        except Exception as release_error:
+                            logger.error(f"Background thread: Error releasing credit hold: {release_error}")
+                        
+                        # Update image_gen status with sanitized error message
+                        if image_gen.status != 'failed':
+                            image_gen.status = 'failed'
+                            # Sanitize error message to hide fal.ai details
+                            image_gen.error_message = sanitize_error_message(error_message, error_type).replace("Video", "Image")
+                            image_gen.save()
                     except Exception as save_error:
-                        logger.error(f"Background thread: Error saving image_gen status: {save_error}")
+                        # Only log once if there's a critical save error
+                        logger.error(f"Background thread: Critical error handling failure for image {image_gen.id}: {save_error}")
             
             # Start background thread
             thread = threading.Thread(target=process_image_result, daemon=True)
