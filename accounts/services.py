@@ -19,43 +19,50 @@ VIDEO_TOOL_CONFIG = {
         'credits': 52,
         'model': 'fal-ai/pika/v2.2/text-to-video',
         'name': 'Pika Labs',
-        'has_sound': False
+        'has_sound': False,
+        'duration_options': [4, 8, 12],  # seconds
     },
     'seedance': {
         'credits': 39,
         'model': 'fal-ai/bytedance/seedance/v1/pro/fast/text-to-video',
         'name': 'Seedance',
-        'has_sound': True
+        'has_sound': True,
+        'duration_options': [4, 8, 12],  # seconds
     },
     'wan': {
         'credits': 24,
         'model': 'wan/v2.6/text-to-video',
         'name': 'Wan',
-        'has_sound': False
+        'has_sound': False,
+        'duration_options': [5, 10, 15],  # seconds - ONLY 5, 10, 15 accepted!
     },
     'luma': {
         'credits': 32,
         'model': 'fal-ai/luma-photon/text-to-video',
         'name': 'Luma AI',
-        'has_sound': True
+        'has_sound': True,
+        'duration_options': [4, 8, 12],  # seconds
     },
     'kling': {
         'credits': 55,
         'model': 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
         'name': 'Kling AI',
-        'has_sound': True
+        'has_sound': True,
+        'duration_options': [4, 8, 12],  # seconds
     },
     'veo': {
         'credits': 238,
         'model': 'fal-ai/veo3',
         'name': 'Veo',
-        'has_sound': True
+        'has_sound': True,
+        'duration_options': [4, 8],  # seconds
     },
     'sora': {
         'credits': 79,
         'model': 'fal-ai/sora-2/text-to-video',
         'name': 'Sora',
-        'has_sound': False
+        'has_sound': False,
+        'duration_options': [4, 8, 12],  # seconds
     },
 }
 
