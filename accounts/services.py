@@ -558,8 +558,6 @@ class VideoGenerationService:
                         logger.warning(f"No credit hold found for video generation {video_gen.id}")
                 except Exception as save_error:
                     logger.error(f"Error updating video_gen status: {save_error}")
-            
-            video_gen.status = 'failed'
             video_gen.error_message = f"{error_type}: {error_message}"
             video_gen.save()
             
